@@ -1,0 +1,444 @@
+# Incremental Integration Prompt — Trustee Platform for Existing PayChain and PayKH Systems
+
+PayChain and PayKH are already deployed and operational:
+
+```text
+https://paychain.cambobia.com
+https://paykh.cambobia.com
+```
+
+Do not rebuild, replace or restructure these platforms unless an integration change is strictly necessary.
+
+Build a new standalone platform:
+
+```text
+https://trustee.cambobia.com
+https://api.trustee.cambobia.com
+```
+
+The Trustee Platform must integrate with the existing PayChain and PayKH systems using versioned APIs, signed webhooks, reconciliation feeds and secure service credentials.
+
+---
+
+# 1. First Task: Inspect Existing Systems
+
+Before implementing integration, inspect both existing codebases and document:
+
+## PayChain
+
+* Current technology stack
+* Authentication model
+* Existing APIs
+* Asset issuance process
+* Minting process
+* Burn process
+* Redemption process
+* Wallet model
+* Blockchain network
+* Transaction model
+* Current reserve logic
+* Current proof-of-reserve logic
+* Event and webhook support
+* Database entities
+* Existing admin roles
+* Railway services
+* Existing domain configuration
+
+## PayKH
+
+* Current technology stack
+* Authentication model
+* Tenant model
+* Merchant model
+* KHQR flow
+* Payment-order model
+* Payment status model
+* Merchant settlement model
+* Campaign-funding model
+* Cashback and reward model
+* PayChain integration
+* Event and webhook support
+* Database entities
+* Existing admin roles
+* Railway services
+* Existing domain configuration
+
+Do not assume endpoint names or database structures.
+
+Create an integration-gap report before coding.
+
+---
+
+# 2. Preserve Existing Ownership
+
+PayKH remains authoritative for:
+
+* Tenants
+* Customers
+* Merchants
+* Orders
+* Payment orders
+* Campaigns
+* Loyalty
+* Cashback rules
+* Referral rules
+* Scratch-game rules
+* Merchant settlement instructions
+
+PayChain remains authoritative for:
+
+* Digital assets
+* Wallets
+* Asset issuance
+* Mint transactions
+* Burn transactions
+* Transfers
+* Digital balances
+* Redemption asset status
+
+Trustee Platform becomes authoritative for:
+
+* Bank account registry
+* Cleared deposits
+* Trustee funds
+* Safeguarded funds
+* Reserve balances
+* Mint authorization
+* Fiat redemption payout
+* Merchant settlement confirmation
+* Reserve and safeguarding evidence
+* Bank-side reconciliation
+* Compliance holds
+* Trustee approvals
+
+Do not copy the entire PayChain or PayKH databases into the Trustee Platform.
+
+---
+
+# 3. Integration Strategy
+
+Implement adapters:
+
+```text
+PayChainAdapter
+PayKHAdapter
+TrusteeBankAdapter
+KHQRProviderAdapter
+ComplianceProviderAdapter
+```
+
+Each adapter must isolate the Trustee Platform from changes in external systems.
+
+Use:
+
+* REST APIs
+* Signed webhooks
+* Scheduled reconciliation
+* Idempotency keys
+* Correlation IDs
+* Retry queues
+* Dead-letter queues
+* Replay controls
+* API versioning
+
+---
+
+# 4. PayChain Integration Adapter
+
+Create:
+
+```typescript
+interface PayChainAdapter {
+  getAsset(assetId: string): Promise<PayChainAsset>;
+  getAssetSupply(assetId: string): Promise<AssetSupply>;
+  getTransaction(transactionId: string): Promise<PayChainTransaction>;
+  getMintStatus(requestId: string): Promise<MintStatus>;
+  getBurnStatus(requestId: string): Promise<BurnStatus>;
+
+  submitMintAuthorization(
+    authorization: SignedMintAuthorization
+  ): Promise<AuthorizationDeliveryResult>;
+
+  submitReserveStatus(
+    status: ReserveStatus
+  ): Promise<ReserveStatusDeliveryResult>;
+
+  submitRedemptionStatus(
+    status: RedemptionStatus
+  ): Promise<RedemptionStatusDeliveryResult>;
+
+  healthCheck(): Promise<IntegrationHealth>;
+}
+```
+
+If PayChain already exposes equivalent APIs, use them.
+
+If not, add only the minimum required endpoints to PayChain.
+
+---
+
+# 5. PayKH Integration Adapter
+
+Create:
+
+```typescript
+interface PayKHAdapter {
+  getTenant(tenantId: string): Promise<PayKHTenant>;
+  getPaymentOrder(paymentOrderId: string): Promise<PayKHPaymentOrder>;
+  getMerchant(merchantId: string): Promise<PayKHMerchant>;
+  getProgram(programId: string): Promise<PayKHProgram>;
+  getSettlement(settlementId: string): Promise<PayKHSettlement>;
+
+  submitPaymentConfirmation(
+    confirmation: SignedPaymentConfirmation
+  ): Promise<ConfirmationDeliveryResult>;
+
+  submitSettlementStatus(
+    status: SettlementStatus
+  ): Promise<SettlementStatusDeliveryResult>;
+
+  submitProgramFundStatus(
+    status: ProgramFundStatus
+  ): Promise<ProgramFundStatusDeliveryResult>;
+
+  healthCheck(): Promise<IntegrationHealth>;
+}
+```
+
+If PayKH already exposes equivalent APIs, use them.
+
+If not, add only the minimum required endpoints to PayKH.
+
+---
+
+# 6. Minimum Changes to Existing PayChain
+
+Add only where missing:
+
+```text
+POST /api/v1/trustee/liability-snapshots
+POST /api/v1/trustee/mint-confirmations
+POST /api/v1/trustee/burn-confirmations
+GET  /api/v1/trustee/assets/{assetId}/supply
+GET  /api/v1/trustee/transactions/{transactionId}
+POST /api/v1/trustee/events
+```
+
+PayChain must accept signed Trustee events for:
+
+```text
+reserve.updated
+reserve.shortfall
+mint.authorized
+mint.rejected
+mint.revoked
+redemption.approved
+payout.confirmed
+program.suspended
+```
+
+---
+
+# 7. Minimum Changes to Existing PayKH
+
+Add only where missing:
+
+```text
+GET  /api/v1/trustee/payment-orders/{id}
+GET  /api/v1/trustee/tenants/{id}
+GET  /api/v1/trustee/merchants/{id}
+GET  /api/v1/trustee/programs/{id}
+GET  /api/v1/trustee/settlements/{id}
+POST /api/v1/trustee/events
+```
+
+PayKH must accept signed Trustee events for:
+
+```text
+payment.detected
+payment.confirmed
+payment.rejected
+payment.duplicate
+payment.refunded
+payment-profile.verified
+payment-profile.suspended
+program-fund.cleared
+program-fund.low
+settlement.approved
+settlement.confirmed
+tenant.suspended
+```
+
+---
+
+# 8. Integration Contract Rules
+
+All integration requests must contain:
+
+* Request ID
+* Correlation ID
+* Client application
+* Timestamp
+* Nonce
+* API version
+* Idempotency key
+* Body hash
+* Signing key ID
+* Digital signature
+
+All responses must contain:
+
+* Request ID
+* Correlation ID
+* Result status
+* Error code
+* Timestamp
+* Response signature where required
+
+Reject:
+
+* Expired requests
+* Replayed nonces
+* Invalid signatures
+* Unknown clients
+* Unsupported API versions
+* Duplicate state-changing requests
+* Requests outside the client’s permission scope
+
+---
+
+# 9. Railway Integration
+
+Deploy the Trustee Platform in its own Railway project:
+
+```text
+trustee-production
+```
+
+Keep existing projects unchanged:
+
+```text
+paychain-production
+paykh-production
+```
+
+Use controlled API communication between projects.
+
+Do not attempt to share a PostgreSQL database between PayChain, PayKH and Trustee.
+
+Each platform must retain its own database.
+
+Use API-level integration and reconciliation rather than direct database access.
+
+---
+
+# 10. Shared Correlation Model
+
+Use common identifiers across all three systems:
+
+```text
+correlation_id
+external_reference
+tenant_id
+program_id
+payment_order_id
+funding_instruction_id
+deposit_id
+mint_request_id
+mint_authorization_id
+redemption_id
+settlement_id
+asset_id
+bank_transaction_id
+```
+
+The same correlation ID must follow a transaction across:
+
+```text
+PayKH → Trustee → PayChain
+```
+
+and:
+
+```text
+PayChain → Trustee → Bank
+```
+
+---
+
+# 11. Initial Integration Sequence
+
+Implement in this order:
+
+1. Inspect existing PayChain APIs.
+2. Inspect existing PayKH APIs.
+3. Produce an integration-gap report.
+4. Define shared identifiers.
+5. Define OpenAPI contracts.
+6. Define webhook event schemas.
+7. Implement Trustee API authentication.
+8. Implement PayKH payment-confirmation integration.
+9. Implement PayChain reserve-status integration.
+10. Implement PayChain mint-authorization integration.
+11. Implement PayChain mint confirmation.
+12. Implement PayChain redemption flow.
+13. Implement PayKH program-fund tracking.
+14. Implement merchant-settlement confirmation.
+15. Implement three-way reconciliation.
+16. Implement dashboards and exception handling.
+17. Run end-to-end integration tests.
+18. Deploy to Railway UAT.
+19. Test with simulated bank transactions.
+20. Prepare production-readiness report.
+
+---
+
+# 12. First Practical Release
+
+The first release should focus on:
+
+## PayKH
+
+* Register tenant recipient profile
+* Create payment order
+* Detect bank payment
+* Match payment
+* Send signed confirmation to PayKH
+* Prevent duplicate payment use
+* Reconcile PayKH orders against bank transactions
+
+## PayChain
+
+* Receive reserve deposit
+* Calculate reserve availability
+* Send reserve status
+* Approve mint request manually
+* Issue signed mint authorization
+* Confirm completed mint
+* Reconcile reserve against supply
+
+## Trustee Portal
+
+* View bank transactions
+* View unmatched payments
+* View PayKH payment orders
+* View PayChain reserve position
+* Approve mint requests
+* View reconciliation exceptions
+* View audit history
+
+---
+
+# 13. Non-Negotiable Integration Rule
+
+Never directly read or write the PayChain or PayKH production databases from the Trustee Platform.
+
+Never allow PayChain or PayKH to directly read or write the Trustee database.
+
+All financial coordination must occur through:
+
+* Authenticated APIs
+* Signed events
+* Reconciliation files
+* Approved operator workflows
+* Immutable audit records

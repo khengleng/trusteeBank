@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+.next/
+out/
+
+# Env & secrets — never commit real secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+!**/testing/**/*.pem
+
+# Logs
+*.log
+npm-debug.log*
+
+# Prisma
+packages/database/prisma/*.db
+
+# Coverage / test
+coverage/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

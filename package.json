@@ -1,0 +1,30 @@
+{
+  "name": "paychain-trustee-fund-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PayChain Trustee Fund Platform — regulated banking and reserve-management layer",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:domain": "npm run test -w @trustee/reserves -w @trustee/ledger -w @trustee/cryptography",
+    "api:dev": "npm run dev -w @trustee/trustee-api",
+    "api:start": "npm run start:prod -w @trustee/trustee-api",
+    "db:generate": "npm run db:generate -w @trustee/database",
+    "db:migrate": "npm run db:migrate -w @trustee/database",
+    "db:deploy": "npm run db:deploy -w @trustee/database",
+    "db:seed": "npm run db:seed -w @trustee/database"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

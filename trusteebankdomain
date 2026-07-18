@@ -1,0 +1,515 @@
+# Trustee Platform Domain Configuration
+
+The official platform URL is:
+
+```text
+https://trustee.cambobia.com
+```
+
+The platform serves:
+
+```text
+https://paychain.cambobia.com
+https://paykh.cambobia.com
+```
+
+Use the following production domains:
+
+```text
+https://trustee.cambobia.com
+https://api.trustee.cambobia.com
+https://ops.trustee.cambobia.com
+https://treasury.trustee.cambobia.com
+https://compliance.trustee.cambobia.com
+https://audit.trustee.cambobia.com
+https://status.trustee.cambobia.com
+```
+
+API base URLs:
+
+```text
+https://api.trustee.cambobia.com/api/v1/paychain
+https://api.trustee.cambobia.com/api/v1/paykh
+https://api.trustee.cambobia.com/api/v1/bank
+```
+
+The `/bank` API must only be accessible to approved trustee-bank systems through private connectivity, mTLS, IP allowlisting and signed requests.
+
+PayChain must use only:
+
+```text
+/api/v1/paychain
+```
+
+PayKH must use only:
+
+```text
+/api/v1/paykh
+```
+
+PayChain credentials must not access PayKH APIs.
+
+PayKH credentials must not access PayChain reserve or mint-authorization APIs.
+
+The trustee bank’s core-banking credentials must never be exposed to PayChain or PayKH.
+
+## Required Integration Flow
+
+```text
+paychain.cambobia.com
+          |
+          v
+api.trustee.cambobia.com/api/v1/paychain
+          |
+          v
+Trustee reserve, mint and redemption controls
+          |
+          v
+Trustee bank core banking
+```
+
+```text
+paykh.cambobia.com
+          |
+          v
+api.trustee.cambobia.com/api/v1/paykh
+          |
+          v
+Payment confirmation, merchant settlement and program funding
+          |
+          v
+Trustee bank core banking and KHQR services
+```
+
+## Railway Configuration
+
+Create Railway custom domains for:
+
+```text
+trustee.cambobia.com
+api.trustee.cambobia.com
+ops.trustee.cambobia.com
+treasury.trustee.cambobia.com
+compliance.trustee.cambobia.com
+audit.trustee.cambobia.com
+status.trustee.cambobia.com
+```
+
+Map them to:
+
+```text
+trustee.cambobia.com
+→ trustee-main-portal
+
+api.trustee.cambobia.com
+→ trustee-api-gateway
+
+ops.trustee.cambobia.com
+→ trustee-operations-portal
+
+treasury.trustee.cambobia.com
+→ trustee-treasury-portal
+
+compliance.trustee.cambobia.com
+→ trustee-compliance-portal
+
+audit.trustee.cambobia.com
+→ trustee-audit-portal
+
+status.trustee.cambobia.com
+→ trustee-status-service
+```
+
+Internal Railway services must use private networking and must not receive public domains.
+
+Internal services include:
+
+```text
+trustee-postgres
+trustee-redis
+trustee-ledger-engine
+trustee-reserve-engine
+trustee-bank-adapter
+trustee-payment-matcher
+trustee-reconciliation-worker
+trustee-compliance-worker
+trustee-webhook-worker
+trustee-reporting-worker
+trustee-scheduler
+```
+
+## Environment Variables
+
+Configure:
+
+```text
+TRUSTEE_PUBLIC_URL=https://trustee.cambobia.com
+TRUSTEE_API_URL=https://api.trustee.cambobia.com
+TRUSTEE_OPS_URL=https://ops.trustee.cambobia.com
+TRUSTEE_TREASURY_URL=https://treasury.trustee.cambobia.com
+TRUSTEE_COMPLIANCE_URL=https://compliance.trustee.cambobia.com
+TRUSTEE_AUDIT_URL=https://audit.trustee.cambobia.com
+
+PAYCHAIN_PUBLIC_URL=https://paychain.cambobia.com
+PAYCHAIN_API_URL=https://api.paychain.cambobia.com
+
+PAYKH_PUBLIC_URL=https://paykh.cambobia.com
+PAYKH_API_URL=https://api.paykh.cambobia.com
+```
+
+Do not hard-code domain names inside business logic.
+
+Use environment-based configuration with strict startup validation.
+
+## CORS Rules
+
+Allow only approved origins:
+
+```text
+https://trustee.cambobia.com
+https://ops.trustee.cambobia.com
+https://treasury.trustee.cambobia.com
+https://compliance.trustee.cambobia.com
+https://audit.trustee.cambobia.com
+https://paychain.cambobia.com
+https://paykh.cambobia.com
+```
+
+Do not use:
+
+```text
+Access-Control-Allow-Origin: *
+```
+
+for authenticated or financial APIs.
+
+## Callback URLs
+
+PayChain callback:
+
+```text
+https://api.paychain.cambobia.com/api/v1/trustee/events
+```
+
+PayKH callback:
+
+```text
+https://api.paykh.cambobia.com/api/v1/trustee/events
+```
+
+The Trustee Platform must sign all callbacks.
+
+Callbacks must include:
+
+* Event ID
+* Event type
+* Event sequence
+* Timestamp
+* Client ID
+* Program ID
+* Correlation ID
+* Request ID
+* Nonce
+* Body hash
+* Signing-key ID
+* Digital signature
+
+## API Documentation
+
+Publish restricted API documentation at:
+
+```text
+https://api.trustee.cambobia.com/docs/paychain
+https://api.trustee.cambobia.com/docs/paykh
+```
+
+Do not expose trustee-bank internal APIs through public Swagger documentation.
+
+## Branding
+
+Use the product name:
+
+```text
+Cambobia Trustee Banking Platform
+```
+
+Subtitle:
+
+```text
+Safeguarding, reserve control and financial assurance for PayChain and PayKH
+```
+
+The codebase may use the internal service prefix:
+
+```text
+trustee
+```
+
+Examples:
+
+```text
+trustee-api-gateway
+trustee-ledger-engine
+trustee-reserve-engine
+trustee-payment-matcher
+trustee-reconciliation-worker
+```
+
+
+
+# Trustee Platform Domain Configuration
+
+The official platform URL is:
+
+```text
+https://trustee.cambobia.com
+```
+
+The platform serves:
+
+```text
+https://paychain.cambobia.com
+https://paykh.cambobia.com
+```
+
+Use the following production domains:
+
+```text
+https://trustee.cambobia.com
+https://api.trustee.cambobia.com
+https://ops.trustee.cambobia.com
+https://treasury.trustee.cambobia.com
+https://compliance.trustee.cambobia.com
+https://audit.trustee.cambobia.com
+https://status.trustee.cambobia.com
+```
+
+API base URLs:
+
+```text
+https://api.trustee.cambobia.com/api/v1/paychain
+https://api.trustee.cambobia.com/api/v1/paykh
+https://api.trustee.cambobia.com/api/v1/bank
+```
+
+The `/bank` API must only be accessible to approved trustee-bank systems through private connectivity, mTLS, IP allowlisting and signed requests.
+
+PayChain must use only:
+
+```text
+/api/v1/paychain
+```
+
+PayKH must use only:
+
+```text
+/api/v1/paykh
+```
+
+PayChain credentials must not access PayKH APIs.
+
+PayKH credentials must not access PayChain reserve or mint-authorization APIs.
+
+The trustee bank’s core-banking credentials must never be exposed to PayChain or PayKH.
+
+## Required Integration Flow
+
+```text
+paychain.cambobia.com
+          |
+          v
+api.trustee.cambobia.com/api/v1/paychain
+          |
+          v
+Trustee reserve, mint and redemption controls
+          |
+          v
+Trustee bank core banking
+```
+
+```text
+paykh.cambobia.com
+          |
+          v
+api.trustee.cambobia.com/api/v1/paykh
+          |
+          v
+Payment confirmation, merchant settlement and program funding
+          |
+          v
+Trustee bank core banking and KHQR services
+```
+
+## Railway Configuration
+
+Create Railway custom domains for:
+
+```text
+trustee.cambobia.com
+api.trustee.cambobia.com
+ops.trustee.cambobia.com
+treasury.trustee.cambobia.com
+compliance.trustee.cambobia.com
+audit.trustee.cambobia.com
+status.trustee.cambobia.com
+```
+
+Map them to:
+
+```text
+trustee.cambobia.com
+→ trustee-main-portal
+
+api.trustee.cambobia.com
+→ trustee-api-gateway
+
+ops.trustee.cambobia.com
+→ trustee-operations-portal
+
+treasury.trustee.cambobia.com
+→ trustee-treasury-portal
+
+compliance.trustee.cambobia.com
+→ trustee-compliance-portal
+
+audit.trustee.cambobia.com
+→ trustee-audit-portal
+
+status.trustee.cambobia.com
+→ trustee-status-service
+```
+
+Internal Railway services must use private networking and must not receive public domains.
+
+Internal services include:
+
+```text
+trustee-postgres
+trustee-redis
+trustee-ledger-engine
+trustee-reserve-engine
+trustee-bank-adapter
+trustee-payment-matcher
+trustee-reconciliation-worker
+trustee-compliance-worker
+trustee-webhook-worker
+trustee-reporting-worker
+trustee-scheduler
+```
+
+## Environment Variables
+
+Configure:
+
+```text
+TRUSTEE_PUBLIC_URL=https://trustee.cambobia.com
+TRUSTEE_API_URL=https://api.trustee.cambobia.com
+TRUSTEE_OPS_URL=https://ops.trustee.cambobia.com
+TRUSTEE_TREASURY_URL=https://treasury.trustee.cambobia.com
+TRUSTEE_COMPLIANCE_URL=https://compliance.trustee.cambobia.com
+TRUSTEE_AUDIT_URL=https://audit.trustee.cambobia.com
+
+PAYCHAIN_PUBLIC_URL=https://paychain.cambobia.com
+PAYCHAIN_API_URL=https://api.paychain.cambobia.com
+
+PAYKH_PUBLIC_URL=https://paykh.cambobia.com
+PAYKH_API_URL=https://api.paykh.cambobia.com
+```
+
+Do not hard-code domain names inside business logic.
+
+Use environment-based configuration with strict startup validation.
+
+## CORS Rules
+
+Allow only approved origins:
+
+```text
+https://trustee.cambobia.com
+https://ops.trustee.cambobia.com
+https://treasury.trustee.cambobia.com
+https://compliance.trustee.cambobia.com
+https://audit.trustee.cambobia.com
+https://paychain.cambobia.com
+https://paykh.cambobia.com
+```
+
+Do not use:
+
+```text
+Access-Control-Allow-Origin: *
+```
+
+for authenticated or financial APIs.
+
+## Callback URLs
+
+PayChain callback:
+
+```text
+https://api.paychain.cambobia.com/api/v1/trustee/events
+```
+
+PayKH callback:
+
+```text
+https://api.paykh.cambobia.com/api/v1/trustee/events
+```
+
+The Trustee Platform must sign all callbacks.
+
+Callbacks must include:
+
+* Event ID
+* Event type
+* Event sequence
+* Timestamp
+* Client ID
+* Program ID
+* Correlation ID
+* Request ID
+* Nonce
+* Body hash
+* Signing-key ID
+* Digital signature
+
+## API Documentation
+
+Publish restricted API documentation at:
+
+```text
+https://api.trustee.cambobia.com/docs/paychain
+https://api.trustee.cambobia.com/docs/paykh
+```
+
+Do not expose trustee-bank internal APIs through public Swagger documentation.
+
+## Branding
+
+Use the product name:
+
+```text
+Cambobia Trustee Banking Platform
+```
+
+Subtitle:
+
+```text
+Safeguarding, reserve control and financial assurance for PayChain and PayKH
+```
+
+The codebase may use the internal service prefix:
+
+```text
+trustee
+```
+
+Examples:
+
+```text
+trustee-api-gateway
+trustee-ledger-engine
+trustee-reserve-engine
+trustee-payment-matcher
+trustee-reconciliation-worker
+```

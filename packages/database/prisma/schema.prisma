@@ -1,0 +1,806 @@
+// PayChain Trustee Fund Platform — reserve/mint domain schema.
+// Money is stored as BigInt minor units alongside an ISO-4217 currency code
+// (never floating point). Financial entries are append-only; corrections are
+// made via compensating entries, never edits (§14, §49).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & access (§8, §9)
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  displayName  String
+  // Institution the user belongs to: TRUSTEE_BANK or PAYCHAIN etc.
+  institution  String
+  roles        String[] // RBAC role slugs (§8)
+  // ABAC attributes evaluated by approval policies (department, clearance,
+  // jurisdiction, maxApprovalAmountMinor, etc.) — arbitrary key/value.
+  attributes   Json?
+  // User login credentials (§8). Password is scrypt-hashed; MFA is TOTP.
+  passwordHash String?
+  mfaSecret    String?
+  mfaEnabled   Boolean  @default(false)
+  disabled     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  makerApprovals   Approval[] @relation("maker")
+  checkerApprovals Approval[] @relation("checker")
+
+  @@index([institution])
+}
+
+// ---------------------------------------------------------------------------
+// RBAC / ABAC administration (§8, §9)
+// ---------------------------------------------------------------------------
+
+model Role {
+  slug        String   @id
+  name        String
+  description String?
+  institution String   // TRUSTEE_BANK | PAYCHAIN | PAYKH
+  // Permission slugs granted by this role (from the permission catalog).
+  permissions String[]
+  builtin     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([institution])
+}
+
+// Attribute-based approval matrix (§9): which conditions require how many
+// approvals from which roles. Evaluated for maker-checker(-approver) decisions.
+model AbacPolicy {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  // Transaction type this policy governs, e.g. MINT_AUTHORIZATION, PAYOUT,
+  // SETTLEMENT, RESERVE_ADJUSTMENT, ACCOUNT_CLOSURE, EMERGENCY.
+  transactionType   String
+  // Matching attributes (all must match; null = any): amount band, currency,
+  // riskLevel, programId, assetId, jurisdiction, customerClassification.
+  minAmountMinor    BigInt?
+  maxAmountMinor    BigInt?
+  currency          String?
+  riskLevel         String?
+  programId         String?
+  assetId           String?
+  jurisdiction      String?
+  // Requirements when matched.
+  requiredApprovals Int      @default(2)
+  requiredRoles     String[] // role slugs; approvers must hold one of these
+  effect            String   @default("REQUIRE") // REQUIRE | DENY
+  priority          Int      @default(100)
+  enabled           Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([transactionType])
+  @@index([enabled])
+}
+
+// Replay-prevention nonce store (§28). A nonce may be used once per client
+// within its validity window; the unique constraint blocks replays.
+model NonceUsage {
+  nonce     String   @id
+  clientId  String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+// Reconciliation runs & exceptions (§24, update §22).
+model ReconciliationRun {
+  id        String   @id @default(cuid())
+  scope     String   // RESERVE | PAYMENT_ORDERS | MERCHANT_SETTLEMENTS
+  programId String?
+  tenantId  String?
+  status    String   @default("COMPLETED") // COMPLETED | OK | EXCEPTIONS
+  summary   Json?
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  exceptions ReconciliationException[]
+
+  @@index([scope])
+}
+
+model ReconciliationException {
+  id        String   @id @default(cuid())
+  runId     String
+  run       ReconciliationRun @relation(fields: [runId], references: [id])
+  type      String   // e.g. RESERVE_SHORTFALL, SUPPLY_MISMATCH, UNMATCHED_DEPOSIT
+  detail    Json?
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([runId])
+  @@index([resolved])
+}
+
+// Attestations (§23).
+model Attestation {
+  id             String   @id @default(cuid())
+  programId      String?
+  period         String
+  scope          String
+  methodology    String?
+  reserveAmountMinor  BigInt?
+  liabilityAmountMinor BigInt?
+  currency       String?
+  opinion        String?
+  auditor        String
+  documentHash   String?
+  status         String   @default("DRAFT") // DRAFT|UNDER_REVIEW|APPROVED|PUBLISHED|SUPERSEDED|WITHDRAWN|EXPIRED
+  issueDate      DateTime?
+  expiryDate     DateTime?
+  createdBy      String?
+  approvedBy     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([programId])
+  @@index([status])
+}
+
+// Emergency controls & platform operating mode (§30 emergency controls).
+model PlatformControl {
+  key        String   @id // e.g. platform.read-only, mint.global-suspend
+  value      Boolean  @default(false)
+  reason     String?
+  incidentRef String?
+  setBy      String?
+  updatedAt  DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Institutional & program model (§7)
+// ---------------------------------------------------------------------------
+
+model Program {
+  id                 String   @id @default(cuid())
+  code               String   @unique
+  legalEntityId      String
+  issuerId           String
+  trusteeBankId      String
+  assetId            String
+  referenceCurrency  String
+  legalModel         String   // AccountClassification / legal model
+  regulatoryStatus   String
+  reservePolicy      String   // ReservePolicy enum value
+  requiredRatioBps   Int      @default(10000) // 100% default (§16)
+  safetyBufferBps    Int      @default(0)
+  agreementReferences String[]
+  effectiveDate      DateTime
+  expiryDate         DateTime?
+  status             ProgramStatus @default(ACTIVE)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  accounts             TrusteeAccount[]
+  fundingInstructions  FundingInstruction[]
+  deposits             Deposit[]
+  mintAuthorizations   MintAuthorization[]
+  liabilitySnapshots   LiabilitySnapshot[]
+  reserveSnapshots     ReserveSnapshot[]
+}
+
+enum ProgramStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  CLOSED
+}
+
+// ---------------------------------------------------------------------------
+// Trustee account registry (§10)
+// ---------------------------------------------------------------------------
+
+model TrusteeAccount {
+  id                  String   @id @default(cuid())
+  programId           String
+  program             Program  @relation(fields: [programId], references: [id])
+  // Bank account number is stored masked; full number never persisted here.
+  maskedAccountNumber String
+  coreBankingRef      String
+  accountName         String
+  bankLegalEntity     String
+  branch              String?
+  currency            String
+  classification      String   // AccountClassification value
+  supportedAssetId    String
+  status              AccountStatus @default(PENDING_ACTIVATION)
+  balanceSource       String   // API | STATEMENT | MANUAL
+  integrationMode     String
+  minimumBalanceMinor BigInt   @default(0)
+  requiredReserveBps  Int      @default(10000)
+  restricted          Boolean  @default(false)
+  agreementReference  String?
+  openedDate          DateTime?
+  closedDate          DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  deposits Deposit[]
+
+  @@index([programId])
+}
+
+enum AccountStatus {
+  PENDING_ACTIVATION
+  ACTIVE
+  RESTRICTED
+  ON_HOLD
+  CLOSED
+}
+
+// ---------------------------------------------------------------------------
+// Funding instructions (§13)
+// ---------------------------------------------------------------------------
+
+model FundingInstruction {
+  id                String   @id @default(cuid())
+  programId         String
+  program           Program  @relation(fields: [programId], references: [id])
+  paychainRequestId String   @unique
+  assetId           String
+  depositor         String
+  expectedPayer     String?
+  beneficiaryAccountId String
+  amountMinor       BigInt
+  currency          String
+  uniqueReference   String   @unique
+  permittedMethod   String
+  expiresAt         DateTime
+  status            FundingInstructionStatus @default(ISSUED)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  deposits Deposit[]
+
+  @@index([programId])
+  @@index([status])
+}
+
+enum FundingInstructionStatus {
+  ISSUED
+  PARTIALLY_FUNDED
+  FUNDED
+  EXPIRED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Deposits (§12)
+// ---------------------------------------------------------------------------
+
+model Deposit {
+  id                   String   @id @default(cuid())
+  programId            String
+  program              Program  @relation(fields: [programId], references: [id])
+  fundingInstructionId String?
+  fundingInstruction   FundingInstruction? @relation(fields: [fundingInstructionId], references: [id])
+  trusteeAccountId     String
+  trusteeAccount       TrusteeAccount @relation(fields: [trusteeAccountId], references: [id])
+  bankTransactionId    String   @unique // independent bank-side identifier
+  payerName            String?
+  payerAccountMasked   String?
+  originatingBank      String?
+  amountMinor          BigInt
+  currency             String
+  paymentReference     String?
+  transactionDate      DateTime
+  valueDate            DateTime?
+  status               DepositStatus @default(DETECTED)
+  complianceResult     String?
+  clearedAt            DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([programId])
+  @@index([status])
+  @@index([fundingInstructionId])
+}
+
+enum DepositStatus {
+  EXPECTED
+  DETECTED
+  UNMATCHED
+  MATCHED
+  PENDING_CLEARANCE
+  CLEARED
+  HELD
+  REJECTED
+  RETURNED
+  ALLOCATED_TO_RESERVE
+  AVAILABLE_FOR_MINT
+  CONSUMED_BY_MINT
+  REFUNDED
+  MANUAL_REVIEW
+}
+
+// ---------------------------------------------------------------------------
+// Reserve subledger — immutable double-entry (§14)
+// ---------------------------------------------------------------------------
+
+model LedgerEntry {
+  id            String   @id @default(cuid())
+  // Scope dimension: a PayChain program id OR a PayKH tenant id. Not a hard FK
+  // because the subledger spans both client platforms.
+  programId     String
+  assetId       String
+  currency      String
+  description   String
+  source        String   // e.g. deposit:dep_1, mint-auth:ma_9
+  actor         String
+  approvalRef   String?
+  correlationId String?
+  reversalOf    String?  // source of the entry this reverses, if any
+  totalDebitMinor  BigInt
+  totalCreditMinor BigInt
+  postedAt      DateTime @default(now())
+
+  postings LedgerPosting[]
+
+  @@index([programId])
+  @@index([source])
+}
+
+model LedgerPosting {
+  id          String   @id @default(cuid())
+  entryId     String
+  entry       LedgerEntry @relation(fields: [entryId], references: [id])
+  account     String   // LedgerAccountCode
+  debitMinor  BigInt   @default(0)
+  creditMinor BigInt   @default(0)
+  memo        String?
+
+  @@index([entryId])
+  @@index([account])
+}
+
+// ---------------------------------------------------------------------------
+// PayChain liability feed (§15)
+// ---------------------------------------------------------------------------
+
+model LiabilitySnapshot {
+  id                 String   @id @default(cuid())
+  programId          String
+  program            Program  @relation(fields: [programId], references: [id])
+  assetId            String
+  assetCode          String
+  blockchainNetwork  String
+  issuerAccount      String
+  circulatingMinor   BigInt
+  treasuryHeldMinor  BigInt
+  lockedMinor        BigInt
+  pendingMintMinor   BigInt
+  pendingBurnMinor   BigInt
+  pendingRedemptionMinor BigInt
+  confirmedBurnMinor BigInt
+  effectiveLiabilityMinor BigInt
+  currency           String
+  ledgerReference    String
+  sourceVersion      String
+  sequence           BigInt
+  snapshotTimestamp  DateTime
+  signatureKeyId     String
+  signatureValue     String
+  signatureVerified  Boolean  @default(false)
+  createdAt          DateTime @default(now())
+
+  @@unique([programId, sequence])
+  @@index([programId])
+}
+
+// ---------------------------------------------------------------------------
+// Reserve snapshots / proof of reserve (§22)
+// ---------------------------------------------------------------------------
+
+model ReserveSnapshot {
+  id                 String   @id @default(cuid())
+  programId          String
+  program            Program  @relation(fields: [programId], references: [id])
+  assetId            String
+  referenceCurrency  String
+  eligibleReserveMinor   BigInt
+  excludedAmountMinor    BigInt
+  circulatingLiabilityMinor BigInt
+  pendingRedemptionMinor    BigInt
+  requiredReserveMinor      BigInt
+  reserveRatioBps    Int?
+  surplusMinor       BigInt
+  reconciliationStatus String @default("PENDING")
+  dataSources        String[]
+  signatureKeyId     String
+  signatureValue     String
+  contentHash        String
+  createdAt          DateTime @default(now())
+
+  @@index([programId])
+}
+
+// ---------------------------------------------------------------------------
+// Mint authorization (§18) & confirmation (§19)
+// ---------------------------------------------------------------------------
+
+model MintAuthorization {
+  id                 String   @id @default(cuid())
+  programId          String
+  program            Program  @relation(fields: [programId], references: [id])
+  paychainRequestId  String   @unique
+  assetId            String
+  amountMinor        BigInt
+  currency           String
+  fundingDepositIds  String[]
+  reserveAccountId   String?
+  reserveSnapshotId  String?
+  complianceCaseId   String?
+  status             MintAuthorizationStatus @default(PENDING_MAKER)
+  nonce              String   @unique
+  signingKeyId       String?
+  signatureValue     String?
+  maxMintAmountMinor BigInt
+  singleUse          Boolean  @default(true)
+  issuedAt           DateTime?
+  expiresAt          DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  approval     Approval?
+  confirmation MintConfirmation?
+
+  @@index([programId])
+  @@index([status])
+}
+
+enum MintAuthorizationStatus {
+  DRAFT
+  PENDING_MAKER
+  PENDING_CHECKER
+  APPROVED
+  ISSUED
+  CONSUMED
+  EXPIRED
+  REVOKED
+  REJECTED
+}
+
+model MintConfirmation {
+  id                  String   @id @default(cuid())
+  mintAuthorizationId String   @unique
+  mintAuthorization   MintAuthorization @relation(fields: [mintAuthorizationId], references: [id])
+  paychainTransactionId String
+  blockchainTxHash    String
+  amountMinor         BigInt
+  currency            String
+  destination         String
+  ledgerHeight        BigInt?
+  confirmedAt         DateTime
+  paychainSignature   String
+  verified            Boolean  @default(false)
+  createdAt           DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Redemption & payout (§20, §21)
+// ---------------------------------------------------------------------------
+
+model Redemption {
+  id                     String   @id @default(cuid())
+  programId              String
+  paychainRedemptionId   String   @unique
+  assetId                String
+  amountMinor            BigInt
+  currency               String
+  beneficiaryName        String
+  beneficiaryAccountMasked String
+  status                 RedemptionStatus @default(REQUESTED)
+  correlationId          String?
+  burnTxHash             String?
+  burnConfirmedAt        DateTime?
+  approvedById           String?
+  payoutReference        String?
+  payoutSubmittedAt      DateTime?
+  payoutConfirmedAt      DateTime?
+  completedAt            DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([programId])
+  @@index([status])
+}
+
+enum RedemptionStatus {
+  REQUESTED
+  VALIDATING
+  COMPLIANCE_REVIEW
+  AWAITING_APPROVAL
+  APPROVED
+  ASSET_LOCK_PENDING
+  ASSET_LOCKED
+  BURN_PENDING
+  BURN_CONFIRMED
+  PAYOUT_PENDING
+  PAYOUT_SUBMITTED
+  PAYOUT_CONFIRMED
+  COMPLETED
+  REJECTED
+  FAILED
+  RETURNED
+  MANUAL_REVIEW
+}
+
+// ---------------------------------------------------------------------------
+// Maker-checker approvals (§9)
+// ---------------------------------------------------------------------------
+
+model Approval {
+  id                  String   @id @default(cuid())
+  subjectType         String   // e.g. MINT_AUTHORIZATION
+  mintAuthorizationId String?  @unique
+  mintAuthorization   MintAuthorization? @relation(fields: [mintAuthorizationId], references: [id])
+  makerId             String
+  maker               User     @relation("maker", fields: [makerId], references: [id])
+  makerActedAt        DateTime @default(now())
+  checkerId           String?
+  checker             User?    @relation("checker", fields: [checkerId], references: [id])
+  checkerActedAt      DateTime?
+  decision            ApprovalDecision @default(PENDING)
+  reason              String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+enum ApprovalDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ---------------------------------------------------------------------------
+// Cross-cutting: audit, feature flags, idempotency, event outbox
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  actor         String
+  actorRole     String?
+  action        String
+  subjectType   String
+  subjectId     String?
+  beforeState   Json?
+  afterState    Json?
+  reason        String?
+  approvalRef   String?
+  ip            String?
+  device        String?
+  correlationId String?
+  sourceSystem  String?
+  createdAt     DateTime @default(now())
+
+  @@index([subjectType, subjectId])
+  @@index([action])
+}
+
+model FeatureFlag {
+  key         String   @id
+  enabled     Boolean  @default(false)
+  description String?
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+}
+
+model IdempotencyKey {
+  key           String   @id
+  route         String
+  requestHash   String
+  responseCode  Int
+  responseBody  Json
+  createdAt     DateTime @default(now())
+
+  @@index([route])
+}
+
+model OutboxEvent {
+  id            String   @id @default(cuid())
+  eventType     String
+  // Target client platform for the signed event (PAYCHAIN | PAYKH). §18/§19 update.
+  targetPlatform String  @default("PAYCHAIN")
+  sequence      BigInt   @default(autoincrement())
+  payload       Json
+  signatureKeyId String
+  signatureValue String
+  deliveredAt   DateTime?
+  attempts      Int      @default(0)
+  deadLettered  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([eventType])
+  @@index([targetPlatform])
+  @@index([deliveredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Client applications & separation (update §3)
+// ---------------------------------------------------------------------------
+
+model ClientApplication {
+  id            String   @id @default(cuid())
+  platform      String   @unique // ClientPlatform: PAYCHAIN | PAYKH | ...
+  displayName   String
+  oauthClientId String   @unique
+  // SHA-256 hash of the client's API secret (plaintext is shown once at issue).
+  clientSecretHash String?
+  // Registered public key used to verify inbound request/liability signatures.
+  publicKeyPem  String?
+  // When true, value-changing requests must carry a valid signature + nonce +
+  // fresh timestamp (§28). Opt-in per client once a public key is registered.
+  requireSignature Boolean @default(false)
+  ipAllowlist   String[]
+  webhookUrl    String?
+  rateLimitPerMin Int    @default(600)
+  disabled      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Shared reserve & liability registry (update §17)
+// Connects a trustee program/account to a PayKH program/tenant and/or a
+// PayChain asset, with the fund classification and backing policy.
+// ---------------------------------------------------------------------------
+
+model LiabilityRegistryEntry {
+  id                    String   @id @default(cuid())
+  trusteeProgramId      String
+  platform              String   // ClientPlatform
+  tenantId              String?
+  paykhProgramId        String?
+  paychainAssetId       String?
+  liabilityType         String   // FundClassification
+  reserveAccountId      String
+  currency              String
+  requiredReserveBps    Int      @default(10000)
+  mintAuthorizationRequired       Boolean @default(true)
+  redemptionAuthorizationRequired Boolean @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([platform])
+  @@index([tenantId])
+  @@index([paychainAssetId])
+}
+
+// ---------------------------------------------------------------------------
+// PayKH: tenant payment profiles (update §13/§14)
+// ---------------------------------------------------------------------------
+
+model PaykhPaymentProfile {
+  id               String   @id @default(cuid())
+  tenantId         String
+  recipientName    String
+  recipientAccountMasked String
+  bankName         String
+  currency         String
+  khqrPayload      String   // raw KHQR string submitted by the tenant
+  status           PaymentProfileStatus @default(SUBMITTED)
+  verifiedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  paymentOrders PaykhPaymentOrder[]
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+enum PaymentProfileStatus {
+  SUBMITTED
+  VERIFYING
+  APPROVED
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+// ---------------------------------------------------------------------------
+// PayKH: payment orders + KHQR (update §13/§14)
+// ---------------------------------------------------------------------------
+
+model PaykhPaymentOrder {
+  id               String   @id @default(cuid())
+  tenantId         String
+  profileId        String
+  profile          PaykhPaymentProfile @relation(fields: [profileId], references: [id])
+  amountMinor      BigInt
+  currency         String
+  // Unique per-order KHQR reference; enforces one bank payment -> one order.
+  paymentReference String   @unique
+  khqrString       String?
+  status           PaymentOrderStatus @default(CREATED)
+  matchedBankTransactionId String? @unique
+  confirmedAt      DateTime?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+enum PaymentOrderStatus {
+  CREATED
+  AWAITING_PAYMENT
+  PAYMENT_DETECTED
+  CONFIRMED
+  DUPLICATE
+  REJECTED
+  REFUNDED
+  EXPIRED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// PayKH: program funds (cashback, gift-card float, etc.) (update §11/§15)
+// ---------------------------------------------------------------------------
+
+model PaykhProgramFund {
+  id               String   @id @default(cuid())
+  tenantId         String
+  paykhProgramId   String
+  classification   String   // FundClassification
+  currency         String
+  reserveAccountId String
+  // Ledger-independent running convenience balances (authoritative = ledger).
+  fundedMinor      BigInt   @default(0)
+  reservedMinor    BigInt   @default(0)
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([tenantId, paykhProgramId])
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// PayKH: merchant settlements (update §13)
+// ---------------------------------------------------------------------------
+
+model PaykhSettlement {
+  id            String   @id @default(cuid())
+  tenantId      String
+  merchantId    String
+  amountMinor   BigInt
+  currency      String
+  status        SettlementStatus @default(REQUESTED)
+  approvedById  String?
+  submittedAt   DateTime?
+  confirmedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+enum SettlementStatus {
+  REQUESTED
+  APPROVED
+  SUBMITTED
+  CONFIRMED
+  CANCELLED
+  FAILED
+}

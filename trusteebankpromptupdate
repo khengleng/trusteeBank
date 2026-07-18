@@ -1,0 +1,1281 @@
+# Revised AI Coder Prompt — PayChain Trustee Banking Platform on Railway
+
+Build a production-oriented platform named:
+
+# PayChain Trustee Banking and Reserve Platform
+
+The platform will be deployed on Railway and will serve two controlled client platforms:
+
+```text
+paychain.cambobia.com
+paykh.cambobia.com
+```
+
+The trustee platform is the authoritative institutional layer for:
+
+* Trustee-held money
+* Safeguarded funds
+* Reserve funds
+* Fiat deposit confirmation
+* Fiat payout confirmation
+* Reserve availability
+* Mint authorization
+* Redemption funding
+* Merchant settlement
+* Program funding
+* Proof of reserve
+* Financial reconciliation
+* Compliance controls
+* Regulatory evidence
+* Trustee-bank approvals
+
+The platform must not be designed only for stablecoin issuance.
+
+It must provide reusable trustee-bank services to both PayChain and PayKH.
+
+---
+
+# 1. Platform Purpose
+
+The Trustee Banking Platform must support four primary purposes.
+
+## Purpose 1: PayChain Reserve Control
+
+Support PayChain with:
+
+* Reserve-account registration
+* Funding instructions
+* Deposit confirmation
+* Reserve allocation
+* Mint-capacity calculation
+* Signed mint authorization
+* Redemption approval
+* Fiat payout
+* Supply reconciliation
+* Proof of reserve
+* Reserve attestation
+* Emergency suspension
+
+## Purpose 2: PayKH Payment Confirmation
+
+Support PayKH with:
+
+* Tenant trustee-account mapping
+* KHQR recipient validation
+* Dynamic KHQR payment references
+* Bank transaction confirmation
+* Deposit matching
+* Payment status confirmation
+* Duplicate-payment prevention
+* Merchant payment reconciliation
+* Refund confirmation
+* Settlement reporting
+
+## Purpose 3: PayKH Program-Fund Safeguarding
+
+Support funds belonging to PayKH programs, including:
+
+* Loyalty campaign funding
+* Cashback campaign funding
+* Gift-card float
+* Merchant credit
+* Voucher liabilities
+* Promotional funds
+* Referral reward budgets
+* Scratch-game prize pools
+* Merchant settlement balances
+
+## Purpose 4: Regulatory and Compliance Control
+
+Provide:
+
+* Account segregation
+* Maker-checker controls
+* AML screening
+* Sanctions screening
+* Transaction monitoring
+* Source-of-funds checks
+* Reserve evidence
+* Audit trails
+* Regulatory reports
+* Trustee-bank approval
+* Emergency controls
+
+---
+
+# 2. Complete Architecture
+
+Use this target architecture:
+
+```text
+Customers
+Merchants
+Tenant Owners
+Partner Institutions
+        |
+        +--------------------------+
+        |                          |
+        v                          v
+paykh.cambobia.com        paychain.cambobia.com
+        |                          |
+        | Payment, settlement,     | Reserve, mint,
+        | campaign funding         | redemption
+        |                          |
+        +-------------+------------+
+                      |
+                      v
+        trust-api.paychain.cambobia.com
+                      |
+                      v
+   PayChain Trustee Banking and Reserve Platform
+                      |
+          +-----------+------------+
+          |                        |
+          v                        v
+ Trustee Bank Integration    Compliance Providers
+          |
+          v
+ Core Banking / Payment Switch / KHQR Services
+          |
+          v
+ Trustee, Safeguarding, Reserve and Settlement Accounts
+```
+
+Neither PayKH nor PayChain may connect directly to the trustee bank’s core-banking system.
+
+All communication must pass through the Trustee Integration Gateway.
+
+---
+
+# 3. Client Separation
+
+Treat PayChain and PayKH as separate institutional clients.
+
+Create client applications:
+
+```text
+PAYCHAIN
+PAYKH
+TRUSTEE_BANK_PORTAL
+AUDITOR_PORTAL
+REGULATOR_PORTAL
+```
+
+Each client must have:
+
+* Separate OAuth client
+* Separate mTLS certificate
+* Separate signing key
+* Separate permissions
+* Separate rate limits
+* Separate webhook endpoint
+* Separate idempotency scope
+* Separate IP allowlist
+* Separate service account
+* Separate audit context
+
+PayKH credentials must not be usable for PayChain reserve APIs.
+
+PayChain credentials must not be usable for PayKH merchant-payment APIs.
+
+---
+
+# 4. Domain Structure
+
+Use:
+
+```text
+trust.paychain.cambobia.com
+trust-api.paychain.cambobia.com
+trust-ops.paychain.cambobia.com
+trust-treasury.paychain.cambobia.com
+trust-compliance.paychain.cambobia.com
+trust-audit.paychain.cambobia.com
+trust-status.paychain.cambobia.com
+```
+
+Integration sources:
+
+```text
+api.paychain.cambobia.com
+api.paykh.cambobia.com
+```
+
+Do not expose databases, Redis, workers or internal administration services through public domains.
+
+---
+
+# 5. Railway Deployment Strategy
+
+Railway is the required deployment platform.
+
+Use Railway private networking for communication between:
+
+* API
+* Workers
+* PostgreSQL
+* Redis
+* Reconciliation
+* Scheduler
+* Reporting
+* Evidence service
+* Notification service
+* Integration adapters
+
+Only controlled gateway and portal services may have public ingress.
+
+Create separate Railway projects or strongly isolated environments for:
+
+```text
+trustee-development
+trustee-testing
+trustee-uat
+trustee-production
+trustee-disaster-recovery
+```
+
+Production must never share databases, credentials, buckets or signing keys with development or UAT.
+
+---
+
+# 6. Railway Services
+
+Deploy these services:
+
+```text
+trustee-api-gateway
+trustee-paychain-api
+trustee-paykh-api
+trustee-bank-adapter
+trustee-payment-matcher
+trustee-reserve-engine
+trustee-ledger-engine
+trustee-reconciliation-worker
+trustee-compliance-worker
+trustee-webhook-worker
+trustee-reporting-worker
+trustee-scheduler
+trustee-operations-portal
+trustee-treasury-portal
+trustee-compliance-portal
+trustee-audit-portal
+trustee-postgres
+trustee-redis
+```
+
+Optional later services:
+
+```text
+trustee-kafka
+trustee-analytics
+trustee-siemplatform-adapter
+trustee-regulatory-gateway
+```
+
+Do not deploy a separate microservice for every small domain during the first release.
+
+Use a modular monolith where practical, but deploy workers separately when they require independent scaling or failure isolation.
+
+---
+
+# 7. Railway Private Networking
+
+All internal service-to-service traffic must use Railway private networking.
+
+Use private internal addresses for:
+
+* PostgreSQL
+* Redis
+* Workers
+* Internal APIs
+* Report generation
+* Evidence processing
+* Reconciliation
+* Bank adapters
+
+Public ingress is permitted only for:
+
+* Trustee API Gateway
+* Trustee operations portal
+* Trustee treasury portal
+* Trustee compliance portal
+* Trustee audit portal
+* Approved webhook callbacks
+* Health endpoint with limited output
+
+Do not expose:
+
+* PostgreSQL public endpoint
+* Redis public endpoint
+* Worker ports
+* Internal bank-adapter endpoints
+* Internal reconciliation endpoints
+* Prometheus administration endpoints
+
+---
+
+# 8. Railway Enterprise Controls
+
+For production, require:
+
+* Railway Enterprise assessment
+* SAML SSO
+* Mandatory MFA
+* Environment-based RBAC
+* Audit logs
+* Restricted project membership
+* Approved deployment identities
+* Separation between developers and production operators
+* Protected production deployments
+* Infrastructure change approval
+* Railway Trust Center review
+* Vendor due diligence
+* Data-location assessment
+* Incident-notification assessment
+* Subprocessor assessment
+* Exit and migration plan
+
+The trustee bank must complete its own vendor-risk assessment before live regulated funds are processed.
+
+The existence of a hosting-provider certification does not make the application compliant by itself.
+
+---
+
+# 9. Database Architecture
+
+For the pilot, Railway PostgreSQL may be used.
+
+For real production, choose one of these approved options:
+
+## Option A: Railway PostgreSQL High Availability
+
+Use:
+
+* PostgreSQL HA cluster
+* Automatic failover
+* Pinned PostgreSQL version
+* Connection pooling
+* Encrypted connections
+* Scheduled backups
+* Point-in-time recovery
+* External backup export
+* Database monitoring
+* Restore testing
+
+## Option B: External Bank-Approved Managed PostgreSQL
+
+Connect Railway applications to an external managed PostgreSQL service approved by the trustee bank.
+
+Use this option where required by:
+
+* Bank outsourcing policy
+* Regulator direction
+* Data-residency requirement
+* Encryption-key ownership
+* Dedicated tenancy
+* Backup-retention policy
+* Disaster-recovery policy
+
+Do not assume Railway’s default PostgreSQL template alone satisfies bank-grade availability, backup or regulatory requirements.
+
+---
+
+# 10. Data Ownership
+
+The Trustee Banking Platform is authoritative for:
+
+* Bank accounts
+* Trustee accounts
+* Safeguarding accounts
+* Reserve accounts
+* Settlement accounts
+* Cleared bank deposits
+* Fiat payouts
+* Reserve balances
+* Trustee ledger
+* Reserve snapshots
+* Bank-side reconciliation
+* Compliance holds
+* Trustee approvals
+
+PayChain is authoritative for:
+
+* Blockchain wallets
+* Digital assets
+* Digital-asset supply
+* Blockchain transactions
+* Mint completion
+* Burn completion
+* Digital redemption state
+
+PayKH is authoritative for:
+
+* Customers
+* Merchants
+* Orders
+* Campaigns
+* Coupons
+* Loyalty rules
+* Referrals
+* Scratch games
+* Merchant transactions
+* Payment orders
+* Reward eligibility
+
+Do not duplicate full customer, merchant or campaign databases inside the trustee platform.
+
+Store only the identifiers and regulated information required for banking, compliance, reconciliation and audit.
+
+---
+
+# 11. Institutional Account Structure
+
+Support:
+
+```text
+PAYCHAIN_STABLECOIN_RESERVE
+PAYCHAIN_STABLE_VALUE_RESERVE
+PAYCHAIN_REDEMPTION
+PAYCHAIN_SETTLEMENT
+PAYCHAIN_FEE
+
+PAYKH_MERCHANT_COLLECTION
+PAYKH_MERCHANT_SETTLEMENT
+PAYKH_CUSTOMER_SAFEGUARDING
+PAYKH_CASHBACK_FUND
+PAYKH_GIFT_CARD_FLOAT
+PAYKH_LOYALTY_PROGRAM_FUND
+PAYKH_REFERRAL_REWARD_FUND
+PAYKH_SCRATCH_PRIZE_FUND
+PAYKH_PROMOTIONAL_FUND
+
+TRUSTEE_OPERATIONAL
+TRUSTEE_FEE
+TRUSTEE_SUSPENSE
+TRUSTEE_UNMATCHED_FUNDS
+```
+
+Every account must be mapped to:
+
+* Legal entity
+* Platform
+* Program
+* Tenant where applicable
+* Asset or liability type
+* Currency
+* Account purpose
+* Permitted inflows
+* Permitted outflows
+* Approval rules
+* Reconciliation policy
+* Regulatory classification
+
+Do not mix PayKH program funds with PayChain stablecoin reserves.
+
+Do not mix safeguarded customer funds with trustee-bank operating money.
+
+---
+
+# 12. PayChain Integration Services
+
+Create dedicated PayChain APIs.
+
+Base path:
+
+```text
+/api/v1/paychain
+```
+
+Endpoints:
+
+```text
+POST /funding-instructions
+GET  /funding-instructions/{id}
+GET  /funding-instructions/{id}/status
+
+GET  /reserve-accounts
+GET  /reserves/current
+GET  /reserves/history
+GET  /reserves/mint-capacity
+
+POST /mint-authorizations
+GET  /mint-authorizations/{id}
+POST /mint-authorizations/{id}/confirm
+POST /mint-authorizations/{id}/revoke
+
+POST /redemptions
+GET  /redemptions/{id}
+POST /redemptions/{id}/confirm-lock
+POST /redemptions/{id}/confirm-burn
+GET  /redemptions/{id}/payout
+
+POST /liability-snapshots
+GET  /reconciliations
+GET  /proof-of-reserve/latest
+GET  /attestations
+```
+
+PayChain use cases:
+
+* Request funding instructions
+* Confirm reserve deposit
+* Obtain available mint capacity
+* Request signed mint authorization
+* Report completed mint
+* Request redemption
+* Report asset lock or burn
+* Obtain payout status
+* Submit liability snapshot
+* Obtain reserve evidence
+* Reconcile blockchain supply to bank reserve
+
+---
+
+# 13. PayKH Integration Services
+
+Create dedicated PayKH APIs.
+
+Base path:
+
+```text
+/api/v1/paykh
+```
+
+Endpoints:
+
+## Tenant Payment Profiles
+
+```text
+POST /tenants/{tenantId}/payment-profiles
+GET  /tenants/{tenantId}/payment-profiles
+GET  /payment-profiles/{profileId}
+POST /payment-profiles/{profileId}/verify
+POST /payment-profiles/{profileId}/activate
+POST /payment-profiles/{profileId}/suspend
+```
+
+## Payment Orders
+
+```text
+POST /payment-orders
+GET  /payment-orders/{id}
+GET  /payment-orders/{id}/status
+POST /payment-orders/{id}/cancel
+POST /payment-orders/{id}/refund
+```
+
+## KHQR and Bank Payments
+
+```text
+POST /payment-orders/{id}/khqr
+GET  /payment-orders/{id}/khqr
+POST /payment-orders/{id}/check-payment
+GET  /bank-transactions/{bankTransactionId}
+```
+
+## Program Funding
+
+```text
+POST /program-funds
+GET  /program-funds/{id}
+GET  /program-funds/{id}/balance
+POST /program-funds/{id}/reserve
+POST /program-funds/{id}/release
+```
+
+## Merchant Settlement
+
+```text
+POST /settlements
+GET  /settlements/{id}
+GET  /settlements/{id}/status
+POST /settlements/{id}/approve
+POST /settlements/{id}/cancel
+```
+
+## Reconciliation
+
+```text
+POST /reconciliations/payment-orders
+POST /reconciliations/merchant-settlements
+GET  /reconciliation-exceptions
+```
+
+PayKH use cases:
+
+* Register a tenant’s KHQR recipient profile
+* Validate recipient-account ownership
+* Generate transaction-specific KHQR payment orders
+* Detect payments
+* Confirm amount, currency and recipient
+* Prevent one bank payment from satisfying multiple orders
+* Confirm merchant collections
+* Execute merchant settlement
+* Safeguard campaign funds
+* Reserve cashback or gift-card liabilities
+* Fund PayChain reward issuance
+* Reconcile PayKH orders against bank transactions
+
+---
+
+# 14. PayKH KHQR Flow
+
+Implement:
+
+```text
+Tenant owner uploads KHQR
+          |
+          v
+PayKH submits QR payload to Trustee Platform
+          |
+          v
+Trustee Platform validates recipient
+          |
+          v
+Trustee Bank confirms or verifies account
+          |
+          v
+Payment profile approved
+          |
+          v
+PayKH requests dynamic payment order
+          |
+          v
+Trustee Platform or approved KHQR service creates payment reference
+          |
+          v
+Customer pays
+          |
+          v
+Trustee Platform checks bank transaction
+          |
+          v
+Amount + currency + recipient + reference matched
+          |
+          v
+Signed payment-confirmed event sent to PayKH
+```
+
+Never confirm a PayKH payment solely from:
+
+* Customer screenshot
+* Customer-uploaded receipt
+* Merchant statement
+* QR scan result
+* Frontend callback
+* Unverified notification
+
+---
+
+# 15. Shared Fund Flow Between PayKH and PayChain
+
+Support cases where PayKH collects fiat and PayChain issues digital value.
+
+Example cashback flow:
+
+```text
+Tenant funds PayKH cashback program
+          |
+          v
+Trustee Platform confirms cleared funds
+          |
+          v
+Funds allocated to PAYKH_CASHBACK_FUND
+          |
+          v
+PayKH identifies eligible customer
+          |
+          v
+PayKH requests digital-value issuance
+          |
+          v
+PayChain requests trustee authorization where required
+          |
+          v
+Trustee Platform verifies available program funding
+          |
+          v
+PayChain issues cashback asset
+          |
+          v
+All three systems reconcile
+```
+
+Example gift-card flow:
+
+```text
+Customer buys $20 gift value through PayKH
+          |
+          v
+Trustee Platform confirms $20 bank payment
+          |
+          v
+Funds allocated to PAYKH_GIFT_CARD_FLOAT
+          |
+          v
+PayKH requests PayChain issuance
+          |
+          v
+PayChain issues $20 gift-card value
+          |
+          v
+Trustee reserve and PayChain liability reconcile
+```
+
+Example loyalty points flow:
+
+* Promotional loyalty points may not require fiat reserve if they are non-redeemable promotional value.
+* Cashback, gift value or stable-value credits may require safeguarded funding.
+* The platform must classify each PayChain asset and PayKH reward according to its legal and financial obligation.
+* Do not automatically require reserve for all loyalty points.
+* Do not automatically treat value-bearing rewards as unregulated loyalty points.
+
+---
+
+# 16. Fund Classification Engine
+
+Create classifications:
+
+```text
+NON_MONETARY_PROMOTIONAL_POINT
+CLOSED_LOOP_LOYALTY_VALUE
+MERCHANT_FUNDED_REWARD
+PLATFORM_FUNDED_REWARD
+CASHBACK_LIABILITY
+GIFT_CARD_LIABILITY
+CUSTOMER_SAFEGUARDED_FUNDS
+MERCHANT_SETTLEMENT_PAYABLE
+STABLE_VALUE_LIABILITY
+FIAT_BACKED_STABLECOIN_LIABILITY
+TOKENIZED_DEPOSIT_LIABILITY
+```
+
+Each classification must define:
+
+* Whether fiat backing is required
+* Required backing percentage
+* Permitted backing account
+* Transferability
+* Redeemability
+* Expiration treatment
+* Breakage treatment
+* Settlement policy
+* Reserve reporting
+* Audit requirements
+* Compliance requirements
+
+---
+
+# 17. Shared Reserve and Liability Registry
+
+Create a registry connecting:
+
+```text
+Trustee Program
+Trustee Account
+PayKH Program
+PayKH Tenant
+PayChain Asset
+Reference Currency
+Reserve Policy
+Liability Policy
+```
+
+Example:
+
+```json
+{
+  "trusteeProgramId": "program_cashback_001",
+  "platform": "PAYKH",
+  "tenantId": "tenant_123",
+  "paykhProgramId": "campaign_456",
+  "paychainAssetId": "asset_cashback_usd",
+  "liabilityType": "CASHBACK_LIABILITY",
+  "reserveAccountId": "reserve_account_001",
+  "currency": "USD",
+  "requiredReserveRatio": 1.0,
+  "mintAuthorizationRequired": true,
+  "redemptionAuthorizationRequired": true
+}
+```
+
+---
+
+# 18. Signed Events to PayChain
+
+Send:
+
+```text
+paychain.funding.detected
+paychain.funding.cleared
+paychain.reserve.allocated
+paychain.reserve.shortfall
+paychain.mint.authorized
+paychain.mint.authorization.rejected
+paychain.mint.confirmed
+paychain.redemption.approved
+paychain.payout.submitted
+paychain.payout.confirmed
+paychain.reconciliation.exception
+paychain.program.suspended
+```
+
+---
+
+# 19. Signed Events to PayKH
+
+Send:
+
+```text
+paykh.payment.detected
+paykh.payment.confirmed
+paykh.payment.rejected
+paykh.payment.duplicate
+paykh.payment.refunded
+paykh.payment-profile.verified
+paykh.payment-profile.suspended
+paykh.program-fund.cleared
+paykh.program-fund.low
+paykh.program-fund.exhausted
+paykh.settlement.approved
+paykh.settlement.submitted
+paykh.settlement.confirmed
+paykh.reconciliation.exception
+paykh.tenant.suspended
+```
+
+All events require:
+
+* Event ID
+* Event sequence
+* Platform
+* Tenant or program
+* Timestamp
+* Correlation ID
+* Request ID
+* Body hash
+* Digital signature
+* Key version
+* Replay protection
+
+---
+
+# 20. Idempotency Across All Platforms
+
+Idempotency keys must be scoped by:
+
+```text
+client_application
+tenant
+program
+operation
+```
+
+Prevent:
+
+* Duplicate payment confirmation
+* Duplicate merchant settlement
+* Duplicate mint authorization
+* Duplicate asset mint
+* Duplicate redemption
+* Duplicate payout
+* Duplicate cashback reward
+* Duplicate gift-card issuance
+* Duplicate referral reward
+* Duplicate refund
+
+---
+
+# 21. Trustee Ledger
+
+Use a double-entry ledger for all trustee-controlled money.
+
+Examples:
+
+## PayKH Payment Collection
+
+```text
+Debit  ASSET:TRUSTEE_BANK_CASH
+Credit LIABILITY:PAYKH_MERCHANT_PAYABLE
+```
+
+## Merchant Settlement
+
+```text
+Debit  LIABILITY:PAYKH_MERCHANT_PAYABLE
+Credit ASSET:TRUSTEE_BANK_CASH
+```
+
+## Cashback Program Funding
+
+```text
+Debit  ASSET:TRUSTEE_BANK_CASH
+Credit LIABILITY:PAYKH_CASHBACK_PROGRAM
+```
+
+## PayChain Stable-Value Funding
+
+```text
+Debit  ASSET:PAYCHAIN_RESERVE_CASH
+Credit LIABILITY:PAYCHAIN_RESERVE_OBLIGATION
+```
+
+## Redemption Payout
+
+```text
+Debit  LIABILITY:PAYCHAIN_RESERVE_OBLIGATION
+Credit ASSET:PAYCHAIN_RESERVE_CASH
+```
+
+Never edit posted journals.
+
+Correct errors through compensating entries.
+
+---
+
+# 22. Reconciliation Across Three Systems
+
+Perform:
+
+## PayKH-to-Bank Reconciliation
+
+Compare:
+
+* PayKH payment orders
+* Bank transactions
+* Confirmed payments
+* Refunds
+* Merchant payables
+* Merchant settlements
+
+## PayKH-to-PayChain Reconciliation
+
+Compare:
+
+* Reward instructions
+* PayChain issuance
+* Customer balances
+* Redemptions
+* Reversals
+* Program liabilities
+
+## PayChain-to-Trustee Reconciliation
+
+Compare:
+
+* Reserve deposits
+* Mint authorizations
+* Blockchain supply
+* Burns
+* Redemptions
+* Fiat payouts
+
+## Three-Way Reconciliation
+
+Compare:
+
+```text
+PayKH business obligation
+          =
+PayChain digital liability
+          =
+Trustee eligible fund balance
+```
+
+Only apply three-way reconciliation to assets that require financial backing.
+
+---
+
+# 23. Proof of Reserve and Proof of Safeguarding
+
+Support separate reports:
+
+```text
+PAYCHAIN_PROOF_OF_RESERVE
+PAYKH_PROOF_OF_SAFEGUARDING
+PAYKH_MERCHANT_FUNDS_REPORT
+PAYKH_PROGRAM_FUND_REPORT
+PAYKH_GIFT_CARD_LIABILITY_REPORT
+PAYKH_CASHBACK_LIABILITY_REPORT
+```
+
+Proof of reserve must not be used to describe funds that are legally only merchant settlement balances unless approved terminology supports it.
+
+Public reports must contain aggregated, redacted information only.
+
+---
+
+# 24. Railway Data Storage
+
+Use:
+
+* PostgreSQL for transactional records
+* Redis for queues, locks and short-lived cache
+* Railway object storage or an approved S3-compatible bucket for evidence
+* Immutable external archive for critical audit evidence where required
+
+Do not keep critical evidence only on an application container filesystem.
+
+Configure:
+
+* Daily backups
+* Point-in-time recovery
+* Off-platform encrypted backup
+* Backup retention
+* Quarterly restore test
+* Backup-access logging
+* Separate backup credentials
+* Cross-region disaster-recovery copy where permitted
+
+---
+
+# 25. Railway Reliability
+
+Configure:
+
+* Health checks
+* Graceful shutdown
+* Restart policies
+* Horizontal scaling for stateless APIs
+* Worker concurrency controls
+* Queue dead-letter handling
+* Database connection pooling
+* PostgreSQL HA
+* Redis persistence strategy
+* Timeout and retry policies
+* Circuit breakers
+* Bank-provider failover
+* Webhook retries
+* Scheduled reconciliation
+* External uptime monitoring
+* Alert routing
+
+Do not use mounted application volumes as the only data-protection strategy.
+
+---
+
+# 26. Railway Deployment Controls
+
+Only CI/CD service identities may deploy production.
+
+Require:
+
+* Protected production branch
+* Pull-request approval
+* Successful tests
+* Security scanning
+* Migration review
+* Deployment approval
+* Change ticket
+* Release notes
+* Rollback plan
+
+The application must not run destructive schema changes automatically without an approved migration plan.
+
+---
+
+# 27. Railway Secrets
+
+Store environment secrets through Railway environment variables or an approved external secret manager.
+
+Use separate secrets for:
+
+* PayKH API
+* PayChain API
+* Bank integration
+* Database
+* Redis
+* Webhook signing
+* Mint authorization signing
+* Reserve-snapshot signing
+* Compliance providers
+* Evidence storage
+
+Never store private keys in source code or repository files.
+
+High-value signing keys should use an external KMS, HSM or bank-controlled signing service.
+
+Railway should receive signing results, not unrestricted exportable master keys, where this architecture is available.
+
+---
+
+# 28. Feature Flags
+
+Create shared flags:
+
+```text
+trustee.platform.enabled
+trustee.paychain.enabled
+trustee.paykh.enabled
+
+paychain.funding.enabled
+paychain.reserve.enabled
+paychain.mint-authorization.enabled
+paychain.redemption.enabled
+paychain.proof-of-reserve.enabled
+
+paykh.payment-confirmation.enabled
+paykh.khqr.enabled
+paykh.merchant-settlement.enabled
+paykh.program-funding.enabled
+paykh.cashback-funding.enabled
+paykh.giftcard-funding.enabled
+paykh.proof-of-safeguarding.enabled
+
+bank.core-api.enabled
+bank.statement-import.enabled
+bank.payout.enabled
+
+production.real-funds.enabled
+production.automatic-approval.enabled
+```
+
+Default:
+
+```text
+production.real-funds.enabled = false
+production.automatic-approval.enabled = false
+```
+
+---
+
+# 29. Two-Week Pilot Scope
+
+For a two-week integrated pilot, build:
+
+## Railway Foundation
+
+* Railway projects and environments
+* API services
+* Workers
+* PostgreSQL
+* Redis
+* Private networking
+* Domains
+* Health checks
+* CI/CD
+* Scheduled backups
+
+## Trustee Core
+
+* Account registry
+* Program registry
+* Double-entry ledger
+* Funding instructions
+* Statement import
+* Deposit matching
+* Maker-checker approvals
+* Audit log
+* Reconciliation foundation
+
+## PayChain
+
+* Funding instruction API
+* Reserve balance API
+* Mint-capacity API
+* Manual signed mint authorization
+* Mint-confirmation API
+* Basic redemption workflow
+* Proof-of-reserve snapshot
+
+## PayKH
+
+* Tenant payment-profile API
+* KHQR recipient verification record
+* Payment-order API
+* Bank-payment matching
+* Signed payment confirmation
+* Merchant settlement record
+* Cashback-program fund record
+* PayChain reward-funding mapping
+
+## Portals
+
+* Trustee operations dashboard
+* Reserve dashboard
+* PayKH payment search
+* PayChain mint-authorization queue
+* Reconciliation-exception list
+* Audit-log viewer
+
+Do not process real customer reserve money during the software pilot unless the trustee bank formally approves the environment and operating process.
+
+---
+
+# 30. Critical End-to-End Test: PayKH
+
+The pilot must demonstrate:
+
+1. Tenant owner registers a KHQR payment profile in PayKH.
+2. PayKH submits the profile to the Trustee Platform.
+3. Trustee Platform records and approves the recipient account.
+4. PayKH creates a payment order.
+5. A test bank transaction is received or imported.
+6. Trustee Platform matches recipient, amount, currency and reference.
+7. Trustee Platform signs a payment-confirmed event.
+8. PayKH marks the order paid.
+9. PayKH calculates a reward.
+10. PayKH requests issuance from PayChain.
+11. PayChain issues the test reward.
+12. PayKH, PayChain and trustee records reconcile.
+
+---
+
+# 31. Critical End-to-End Test: PayChain
+
+The pilot must demonstrate:
+
+1. PayChain requests a funding instruction.
+2. Trustee Platform creates an exact funding reference.
+3. Test funds are detected.
+4. Deposit is matched and cleared.
+5. Trustee reserve ledger is updated.
+6. Mint capacity increases.
+7. PayChain requests authorization.
+8. Trustee maker and checker approve.
+9. Trustee Platform signs a single-use authorization.
+10. PayChain verifies the signature.
+11. PayChain mints the exact test amount.
+12. Blockchain confirmation is returned.
+13. Trustee Platform verifies the mint.
+14. Reserve and supply reconcile.
+15. Proof-of-reserve snapshot is created.
+
+---
+
+# 32. Production Activation Conditions
+
+Do not enable real-money production until all of these are completed:
+
+* Trustee-bank business approval
+* Legal structure approval
+* Regulatory analysis
+* Railway vendor-risk assessment
+* Railway Enterprise decision
+* Data-residency decision
+* Core-banking integration approval
+* Penetration test
+* Security architecture review
+* Access-control review
+* Backup restore test
+* Disaster-recovery test
+* AML and compliance integration
+* Operating procedure approval
+* Reconciliation sign-off
+* Auditor evidence review
+* Incident-response exercise
+* Production-readiness approval
+
+---
+
+# 33. Non-Negotiable Rule
+
+The Trustee Banking Platform must serve both PayChain and PayKH while preserving clear responsibility:
+
+```text
+PayKH determines why a customer or merchant should pay or receive value.
+
+PayChain determines how approved digital value is issued, transferred, redeemed or burned.
+
+The Trustee Banking Platform determines whether real bank money exists, is cleared, is safeguarded and may legally support the requested financial action.
+```

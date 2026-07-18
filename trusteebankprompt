@@ -1,0 +1,2270 @@
+# AI Coder Master Prompt — Build PayChain Trustee Fund Platform
+
+You are a principal banking architect, core-banking integration architect, treasury-system architect, trust-account specialist, payment-system engineer, compliance architect, AML specialist, security architect, backend engineer, DevSecOps engineer, data architect, auditor, and QA lead.
+
+Build a production-grade platform named:
+
+# PayChain Trustee Fund Platform
+
+The Trustee Fund Platform is the regulated banking and reserve-management layer supporting:
+
+```text
+paychain.cambobia.com
+```
+
+The platform will be operated by, hosted for, or jointly controlled with a licensed trustee bank.
+
+Its purpose is to:
+
+* Safeguard fiat funds supporting PayChain liabilities
+* Receive reserve deposits
+* Verify incoming bank funds
+* Maintain designated trustee and reserve accounts
+* Confirm reserve availability before PayChain issuance
+* Control mint authorization
+* Control redemption funding
+* Produce proof-of-reserve evidence
+* Reconcile bank balances against PayChain liabilities
+* Support regulatory reporting
+* Support independent audit and attestation
+* Enforce AML, sanctions, KYC and transaction-monitoring requirements
+* Prevent PayChain from creating value without verified backing
+* Provide APIs and signed events to PayChain
+* Provide emergency controls to the trustee bank
+* Maintain legal and operational separation between bank-held fiat and PayChain-issued digital assets
+
+The platform is not a public banking application.
+
+It is a restricted institutional platform for:
+
+* Trustee bank operations
+* Trustee bank treasury
+* Trustee bank compliance
+* Trustee bank risk
+* Trustee bank finance
+* Trustee bank auditors
+* PayChain treasury
+* PayChain compliance
+* PayChain operations
+* External auditors
+* Regulators where authorized
+
+---
+
+# 1. Core Operating Principle
+
+PayChain must never independently declare that reserve funds exist.
+
+The trustee bank is the authoritative source for:
+
+* Bank account existence
+* Account ownership
+* Account designation
+* Available balance
+* Cleared balance
+* Held balance
+* Restricted balance
+* Incoming deposit confirmation
+* Outgoing payout confirmation
+* Reserve account status
+* Reserve evidence
+* Account restrictions
+* Regulatory hold
+* Compliance hold
+
+PayChain is authoritative for:
+
+* Issued digital asset supply
+* Burned digital asset supply
+* Wallet balances
+* Blockchain transactions
+* Pending mint requests
+* Pending redemption requests
+* Digital-asset transaction history
+
+The Trustee Fund Platform is authoritative for:
+
+* Fiat reserves
+* Reserve-account movements
+* Deposit confirmation
+* Redemption funding
+* Settlement confirmation
+* Reserve attestations
+* Reserve exceptions
+* Trustee approvals
+
+---
+
+# 2. Target Architecture
+
+Use this architecture:
+
+```text
+Customers / Merchants / Institutions
+                 |
+                 v
+              PayKH
+                 |
+                 v
+        paychain.cambobia.com
+                 |
+       Mint / Redeem / Reserve APIs
+                 |
+                 v
+   PayChain Trustee Fund Platform
+                 |
+        Trustee Bank Integration
+                 |
+     Core Banking / Payment Switch
+                 |
+    Trustee and Reserve Accounts
+```
+
+Evidence flow:
+
+```text
+Trustee Bank Account Balance
+              |
+              v
+Trustee Fund Platform
+              |
+       Signed Reserve Snapshot
+              |
+              v
+         PayChain Reserve Module
+              |
+              v
+     Proof-of-Reserve Publication
+```
+
+Mint control:
+
+```text
+PayChain Mint Request
+        |
+        v
+Trustee Fund Platform
+        |
+  Check cleared deposit
+        |
+  Check reserve capacity
+        |
+  Compliance screening
+        |
+  Maker-checker approval
+        |
+  Signed mint authorization
+        |
+        v
+PayChain executes mint
+        |
+        v
+Blockchain confirmation
+        |
+        v
+Joint reconciliation
+```
+
+Redemption control:
+
+```text
+PayChain Redemption Request
+        |
+        v
+Customer asset burn or lock
+        |
+        v
+Trustee Fund Platform
+        |
+  Validate redemption
+        |
+  Compliance checks
+        |
+  Treasury approval
+        |
+  Fiat payout instruction
+        |
+  Bank payout confirmation
+        |
+        v
+Redemption completed
+```
+
+---
+
+# 3. Regulatory Design Principle
+
+Do not hard-code assumptions about legal classification.
+
+The platform must support configurable regulatory models:
+
+```text
+SAFEGUARDED_CUSTOMER_FUNDS
+TRUST_ACCOUNT
+ESCROW_ACCOUNT
+CLIENT_MONEY_ACCOUNT
+RESERVE_ACCOUNT
+SETTLEMENT_ACCOUNT
+REDEMPTION_ACCOUNT
+OPERATIONAL_ACCOUNT
+FEE_ACCOUNT
+COLLATERAL_ACCOUNT
+TOKENIZED_DEPOSIT_ACCOUNT
+```
+
+Every account must have:
+
+* Legal owner
+* Beneficial-interest model
+* Account purpose
+* Account classification
+* Supported currency
+* Permitted inflows
+* Permitted outflows
+* Applicable restrictions
+* Jurisdiction
+* Regulator reference
+* Contract reference
+* Trust or safeguarding agreement reference
+* Activation approval
+* Closure approval
+
+Do not label an account as a trust account unless legally established as such.
+
+Allow the trustee bank to configure terminology approved by legal counsel.
+
+---
+
+# 4. Product Boundaries
+
+The Trustee Fund Platform must not:
+
+* Create customer loyalty campaigns
+* Operate scratch games
+* Manage merchant promotions
+* Hold blockchain private keys unless specifically approved
+* Directly manage customer wallets
+* Mint assets directly on user request
+* Accept unauthenticated reserve claims
+* Treat screenshots as final proof of funds
+* Treat uploaded bank receipts as conclusive deposit confirmation
+* Allow PayChain to modify bank-confirmed transactions
+* Publish confidential bank-account details publicly
+* Expose core-banking credentials to PayChain
+* Allow PayChain administrators to approve bank-side reserve movements
+
+PayChain must interact only through controlled APIs and signed events.
+
+---
+
+# 5. Technology Stack
+
+Use a modular monolith for the first production release.
+
+## Backend
+
+* TypeScript
+* NestJS
+* REST API
+* OpenAPI 3
+* Prisma ORM
+* PostgreSQL
+* Redis
+* BullMQ
+* Apache Kafka-ready event abstraction
+* OpenTelemetry
+* Structured JSON logging
+* Prometheus-compatible metrics
+
+## Frontend
+
+* Next.js
+* TypeScript
+* Tailwind CSS
+* shadcn/ui
+* TanStack Query
+* React Hook Form
+* Zod
+* Khmer and English localization
+* Responsive institutional portal
+
+## Infrastructure
+
+* Docker
+* GitHub Actions
+* Private networking
+* Web application firewall
+* Secret-management integration
+* KMS or HSM integration
+* S3-compatible evidence storage
+* Immutable audit-storage option
+* PostgreSQL high availability
+* Redis high availability
+* Backup and disaster recovery
+
+Support deployment to:
+
+* Trustee bank private cloud
+* Trustee bank data centre
+* Approved sovereign cloud
+* Hybrid deployment
+
+Do not require Railway for regulated production deployment.
+
+Railway may be used only for an isolated development or demonstration environment without real customer or reserve data.
+
+---
+
+# 6. Repository Structure
+
+Create:
+
+```text
+apps/
+  trustee-api/
+  trustee-worker/
+  trustee-operations-portal/
+  trustee-compliance-portal/
+  trustee-treasury-portal/
+  trustee-audit-portal/
+  paychain-integration-gateway/
+
+packages/
+  accounts/
+  deposits/
+  reserves/
+  liabilities/
+  mint-authorizations/
+  redemptions/
+  payouts/
+  reconciliation/
+  proof-of-reserve/
+  attestations/
+  compliance/
+  aml/
+  sanctions/
+  transaction-monitoring/
+  treasury/
+  approvals/
+  core-banking-adapter/
+  bank-statement-adapter/
+  paychain-adapter/
+  events/
+  api-security/
+  identity/
+  audit/
+  database/
+  observability/
+  cryptography/
+  evidence/
+  reporting/
+  feature-flags/
+  config/
+  testing/
+  ui/
+
+docs/
+  product/
+  architecture/
+  regulatory/
+  legal-model/
+  accounts/
+  reserves/
+  minting/
+  redemption/
+  reconciliation/
+  proof-of-reserve/
+  compliance/
+  security/
+  deployment/
+  operations/
+  disaster-recovery/
+  audit/
+  paychain-integration/
+```
+
+Enable strict TypeScript.
+
+Do not use `any`.
+
+---
+
+# 7. Institutional and Multi-Tenant Model
+
+Support multiple regulated relationships.
+
+Entities:
+
+* Trustee bank
+* PayChain operator
+* Stablecoin issuer
+* Program sponsor
+* Tenant
+* Merchant program
+* Reserve custodian
+* Settlement bank
+* Auditor
+* Regulator
+* Compliance provider
+
+Every regulated program must have a separate program record.
+
+Program fields:
+
+* program_id
+* legal_entity_id
+* issuer_id
+* trustee_bank_id
+* asset_id
+* reference_currency
+* legal_model
+* regulatory_status
+* reserve_policy
+* redemption_policy
+* minting_policy
+* account_structure
+* agreement_references
+* effective_date
+* expiry_date
+* status
+* feature flags
+
+Prevent one program’s reserve from being incorrectly used to support another program unless legally approved and explicitly configured.
+
+---
+
+# 8. Identity and Access Control
+
+Integrate with the trustee bank’s identity provider.
+
+Support:
+
+* OIDC
+* OAuth 2.1
+* SAML where required
+* MFA
+* Hardware security keys
+* Device restrictions
+* IP allowlisting
+* Privileged access management
+* Session timeout
+* Step-up authentication
+* Break-glass accounts
+* Periodic access review
+
+Roles:
+
+## Trustee Bank
+
+* Trustee bank super administrator
+* Trustee operations maker
+* Trustee operations checker
+* Treasury maker
+* Treasury checker
+* Compliance analyst
+* Compliance approver
+* Risk officer
+* Finance officer
+* Internal auditor
+* External auditor
+* Regulatory viewer
+* Security administrator
+* Read-only executive
+
+## PayChain
+
+* PayChain integration service
+* PayChain treasury viewer
+* PayChain operations viewer
+* PayChain compliance liaison
+* PayChain reconciliation operator
+* PayChain auditor
+
+PayChain users must not approve trustee-bank payments or reserve movements.
+
+---
+
+# 9. Segregation of Duties
+
+Enforce maker-checker and, where configured, maker-checker-approver.
+
+Require separate users for:
+
+* Account registration
+* Account activation
+* Deposit confirmation override
+* Mint authorization
+* Redemption approval
+* Payout approval
+* Reserve adjustment
+* Attestation approval
+* Reconciliation write-off
+* Emergency suspension
+* Account closure
+* API credential rotation
+
+A user must never approve their own request.
+
+Allow configurable approval matrices based on:
+
+* Amount
+* Currency
+* Risk rating
+* Program
+* Asset
+* Transaction type
+* Jurisdiction
+* Customer classification
+
+---
+
+# 10. Trustee Account Registry
+
+Build an account registry for:
+
+* Reserve accounts
+* Safeguarding accounts
+* Settlement accounts
+* Redemption accounts
+* Fee accounts
+* Operational accounts
+* Collateral accounts
+* Suspense accounts
+
+Fields:
+
+* internal account ID
+* masked bank account number
+* core-banking account reference
+* account name
+* bank legal entity
+* branch
+* currency
+* account type
+* legal classification
+* program
+* supported asset
+* status
+* opened date
+* closed date
+* signatory model
+* balance source
+* integration mode
+* reconciliation frequency
+* permitted transaction types
+* minimum balance
+* required reserve ratio
+* restrictions
+* agreement reference
+
+Never display full bank account numbers unless the user has explicit permission.
+
+---
+
+# 11. Core-Banking Integration
+
+Create an abstraction:
+
+```typescript
+interface TrusteeBankProvider {
+  getAccount(
+    input: GetBankAccountInput
+  ): Promise<BankAccountResult>;
+
+  getAccountBalance(
+    input: GetAccountBalanceInput
+  ): Promise<AccountBalanceResult>;
+
+  getTransactions(
+    input: GetBankTransactionsInput
+  ): Promise<BankTransactionPage>;
+
+  getTransaction(
+    input: GetBankTransactionInput
+  ): Promise<BankTransactionResult>;
+
+  verifyIncomingDeposit(
+    input: VerifyDepositInput
+  ): Promise<DepositVerificationResult>;
+
+  createPayoutInstruction(
+    input: CreatePayoutInstructionInput
+  ): Promise<PayoutInstructionResult>;
+
+  getPayoutStatus(
+    input: GetPayoutStatusInput
+  ): Promise<PayoutStatusResult>;
+
+  placeAccountHold(
+    input: PlaceAccountHoldInput
+  ): Promise<AccountHoldResult>;
+
+  releaseAccountHold(
+    input: ReleaseAccountHoldInput
+  ): Promise<AccountHoldResult>;
+
+  healthCheck(): Promise<BankProviderHealth>;
+}
+```
+
+Support integration modes:
+
+* Core-banking API
+* Enterprise service bus
+* ISO 20022 message gateway
+* Payment switch API
+* Secure file transfer
+* Bank-statement API
+* CAMT statement import
+* MT statement import where legacy systems require it
+* Manual dual-control fallback
+
+Do not couple business logic to one core-banking vendor.
+
+---
+
+# 12. Deposit Detection and Matching
+
+Support incoming deposits through:
+
+* Unique virtual account
+* Unique payment reference
+* Unique deposit instruction
+* KHQR dynamic payment reference
+* Bank transfer reference
+* Account-to-account transfer
+* Branch cash deposit where legally supported
+* Bulk institutional funding
+* Treasury funding
+
+Deposit statuses:
+
+```text
+EXPECTED
+DETECTED
+UNMATCHED
+MATCHED
+PENDING_CLEARANCE
+CLEARED
+HELD
+REJECTED
+RETURNED
+ALLOCATED_TO_RESERVE
+AVAILABLE_FOR_MINT
+CONSUMED_BY_MINT
+REFUNDED
+MANUAL_REVIEW
+```
+
+Matching fields:
+
+* payer name
+* payer account
+* originating bank
+* beneficiary account
+* amount
+* currency
+* payment reference
+* transaction date
+* value date
+* bank transaction ID
+* PayChain funding instruction ID
+* program ID
+* asset ID
+* expected depositor
+* compliance result
+
+Do not permit minting against:
+
+* Screenshots
+* Uploaded receipts alone
+* Pending deposits
+* Reversed deposits
+* Returned deposits
+* Unidentified cash
+* Unsupported currencies
+* Unmatched transfers
+* Funds under legal hold
+* Funds under AML review
+
+---
+
+# 13. Funding Instructions
+
+Before accepting funds for minting, generate a funding instruction.
+
+Fields:
+
+* funding_instruction_id
+* PayChain request ID
+* program
+* asset
+* depositor
+* expected payer
+* beneficiary account
+* amount
+* currency
+* unique reference
+* expiration
+* permitted funding method
+* compliance requirements
+* status
+
+The platform must return:
+
+* Beneficiary bank
+* Beneficiary account name
+* Masked or permitted account number
+* Currency
+* Exact amount
+* Unique reference
+* Expiry
+* Instructions
+
+Do not mark funding completed until bank-side confirmation is received.
+
+---
+
+# 14. Reserve Ledger
+
+Create a bank-side reserve subledger.
+
+The subledger must record:
+
+* Opening reserve
+* Cleared deposits
+* Pending deposits
+* Mint allocations
+* Burn releases
+* Redemption obligations
+* Pending payouts
+* Completed payouts
+* Fees
+* Interest where legally permitted
+* Adjustments
+* Holds
+* Shortfalls
+* Excess reserve
+* Closing reserve
+
+Use double-entry accounting.
+
+Example accounts:
+
+```text
+ASSET:TRUSTEE_BANK_CASH
+ASSET:SETTLEMENT_RECEIVABLE
+ASSET:REDEMPTION_RECEIVABLE
+
+LIABILITY:PAYCHAIN_RESERVE_OBLIGATION
+LIABILITY:PENDING_MINT
+LIABILITY:PENDING_REDEMPTION
+LIABILITY:UNMATCHED_DEPOSIT
+
+INCOME:TRUSTEE_FEE
+EXPENSE:BANK_CHARGE
+SUSPENSE:UNRECONCILED_ITEM
+```
+
+All journal entries must:
+
+* Balance to zero
+* Be immutable
+* Carry source references
+* Carry program and asset identifiers
+* Carry actor and approval references
+* Support reversals through compensating entries
+
+Never directly edit posted financial entries.
+
+---
+
+# 15. PayChain Liability Feed
+
+PayChain must provide signed liability snapshots containing:
+
+* asset ID
+* asset code
+* blockchain network
+* issuer account
+* circulating supply
+* treasury-held supply
+* locked supply
+* pending mint
+* pending burn
+* pending redemption
+* confirmed burn
+* effective liability
+* timestamp
+* block or ledger reference
+* source-system version
+* digital signature
+
+The Trustee Fund Platform must independently verify:
+
+* Signature
+* Asset identity
+* Issuer identity
+* Blockchain ledger reference
+* Supply calculation
+* Duplicate snapshot
+* Snapshot sequence
+* Timestamp freshness
+
+Do not rely exclusively on PayChain’s database.
+
+Where feasible, independently retrieve blockchain supply and compare it with the PayChain feed.
+
+---
+
+# 16. Reserve Calculation
+
+Calculate:
+
+```text
+Eligible Reserve =
+Cleared Bank Balance
+- Restricted Funds
+- Unmatched Funds
+- Pending Outgoing Payouts
+- Bank Charges Due
+- Regulatory Holds
+- Operational Funds
+- Other Ineligible Amounts
+```
+
+Calculate:
+
+```text
+Reserve Obligation =
+Circulating Supply
++ Confirmed Redemption Obligations
++ Other Contractual Liabilities
+- Legally Approved Exclusions
+```
+
+Calculate:
+
+```text
+Reserve Ratio =
+Eligible Reserve / Reserve Obligation
+```
+
+Support policies:
+
+* 100% reserve
+* Greater-than-100% overcollateralization
+* Asset-specific buffer
+* Intraday buffer
+* Redemption-liquidity buffer
+* Regulatory buffer
+
+The default fiat-backed stablecoin configuration must require at least 100% eligible reserve unless the trustee bank approves another legally permitted model.
+
+---
+
+# 17. Mint Capacity
+
+Calculate:
+
+```text
+Mint Capacity =
+Eligible Reserve
+- Existing Reserve Obligation
+- Required Safety Buffer
+- Pending Mint Authorizations
+```
+
+Never issue a mint authorization if:
+
+* Mint capacity is insufficient
+* Reserve data is stale
+* Bank connectivity is unavailable beyond configured tolerance
+* Reconciliation is unresolved
+* Compliance has placed a hold
+* Asset minting is suspended
+* Program is suspended
+* Account is restricted
+* Deposit is not cleared
+* Approval is incomplete
+* Liability feed is stale
+* Proof-of-reserve is expired where required
+
+---
+
+# 18. Mint Authorization Workflow
+
+Workflow:
+
+```text
+PayChain requests mint authorization
+              |
+              v
+Validate API signature and certificate
+              |
+              v
+Validate program and asset
+              |
+              v
+Match cleared funding
+              |
+              v
+Check reserve and mint capacity
+              |
+              v
+Run AML and sanctions controls
+              |
+              v
+Apply amount and risk limits
+              |
+              v
+Maker review
+              |
+              v
+Checker approval
+              |
+              v
+Create signed mint authorization
+              |
+              v
+PayChain executes blockchain mint
+              |
+              v
+PayChain returns mint confirmation
+              |
+              v
+Joint reconciliation
+```
+
+Mint authorization fields:
+
+* authorization ID
+* PayChain request ID
+* program ID
+* asset ID
+* amount
+* currency
+* funding deposit IDs
+* reserve account ID
+* reserve snapshot ID
+* compliance case ID
+* approval records
+* issued timestamp
+* expiration timestamp
+* nonce
+* signing-key ID
+* digital signature
+* maximum mint amount
+* single-use status
+
+Mint authorizations must be:
+
+* Single use
+* Amount bound
+* Asset bound
+* Program bound
+* Time limited
+* Cryptographically signed
+* Revocable before use
+* Idempotent
+* Auditable
+
+---
+
+# 19. Mint Confirmation
+
+After PayChain mints, require:
+
+* Mint authorization ID
+* PayChain transaction ID
+* Blockchain transaction hash
+* Asset
+* Amount
+* Destination
+* Ledger height
+* Confirmation timestamp
+* PayChain signature
+
+Validate that:
+
+* Authorization was valid
+* Amount matches
+* Asset matches
+* Authorization has not been used
+* Blockchain transaction succeeded
+* Supply increased as expected
+
+If PayChain does not submit confirmation before expiry:
+
+* Mark authorization expired
+* Release reserved mint capacity
+* Create operational alert
+* Require reconciliation
+
+---
+
+# 20. Redemption Workflow
+
+Workflow:
+
+```text
+Customer requests redemption in PayChain
+              |
+              v
+PayChain validates wallet and asset
+              |
+              v
+Trustee platform receives redemption request
+              |
+              v
+KYC / AML / sanctions checks
+              |
+              v
+Validate bank beneficiary
+              |
+              v
+Validate reserve and liquidity
+              |
+              v
+Approve redemption
+              |
+              v
+PayChain locks or burns digital asset
+              |
+              v
+Trustee platform verifies burn
+              |
+              v
+Trustee bank executes fiat payout
+              |
+              v
+Bank confirms payout
+              |
+              v
+Both systems reconcile
+```
+
+Redemption statuses:
+
+```text
+REQUESTED
+VALIDATING
+COMPLIANCE_REVIEW
+AWAITING_APPROVAL
+APPROVED
+ASSET_LOCK_PENDING
+ASSET_LOCKED
+BURN_PENDING
+BURN_CONFIRMED
+PAYOUT_PENDING
+PAYOUT_SUBMITTED
+PAYOUT_CONFIRMED
+COMPLETED
+REJECTED
+FAILED
+RETURNED
+MANUAL_REVIEW
+```
+
+Never mark redemption complete until:
+
+* Required asset lock or burn is confirmed
+* Fiat payout is confirmed
+* Reconciliation passes
+
+---
+
+# 21. Payout Controls
+
+Payouts must support:
+
+* Bank account payout
+* Bakong-compatible payout through approved bank services
+* Domestic transfer
+* Bulk payout
+* Manual bank fallback under dual control
+
+Validate:
+
+* Beneficiary name
+* Beneficiary account
+* Currency
+* Amount
+* Customer identity
+* Redemption ownership
+* Sanctions screening
+* Duplicate payout
+* Account status
+* Daily and monthly limits
+
+Use name-matching rules appropriate to available bank capabilities.
+
+Never permit payout details to be changed after approval without restarting approval.
+
+---
+
+# 22. Proof of Reserve
+
+Build a proof-of-reserve module supporting:
+
+* Internal reserve reports
+* Daily reserve snapshots
+* Intraday reserve snapshots
+* Auditor attestations
+* Bank-signed reserve confirmations
+* Regulatory reports
+* Public summary reports
+* Cryptographic hash anchoring
+* Version history
+
+Reserve snapshot fields:
+
+* snapshot ID
+* program
+* asset
+* reference currency
+* timestamp
+* bank-account balances
+* eligible reserve
+* excluded amounts
+* circulating liability
+* pending redemption
+* required reserve
+* reserve ratio
+* surplus or shortfall
+* data sources
+* reconciliation status
+* approvers
+* auditor reference
+* digital signature
+
+Do not expose:
+
+* Full bank account numbers
+* Customer names
+* Payer details
+* Core-banking references
+* Confidential compliance cases
+* Unredacted bank statements
+
+A public proof-of-reserve report should expose only approved aggregated information.
+
+---
+
+# 23. Attestation Management
+
+Support attestations by:
+
+* Trustee bank
+* Internal audit
+* External audit firm
+* Independent accountant
+* Approved reserve verifier
+
+Attestation fields:
+
+* attestation ID
+* period
+* scope
+* methodology
+* programs
+* assets
+* accounts reviewed
+* reserve amount
+* liability amount
+* exceptions
+* opinion
+* auditor
+* signed document
+* document hash
+* issue date
+* expiry date
+* status
+
+Statuses:
+
+```text
+DRAFT
+UNDER_REVIEW
+APPROVED
+PUBLISHED
+SUPERSEDED
+WITHDRAWN
+EXPIRED
+```
+
+---
+
+# 24. Reconciliation
+
+Implement multi-level reconciliation.
+
+## Level 1: Bank Account Reconciliation
+
+Compare:
+
+* Core-banking balance
+* Bank statement balance
+* Trustee subledger balance
+
+## Level 2: Deposit Reconciliation
+
+Compare:
+
+* Expected funding
+* Bank-detected funding
+* Cleared deposits
+* Allocated reserve
+
+## Level 3: Mint Reconciliation
+
+Compare:
+
+* Cleared reserve deposits
+* Mint authorizations
+* Blockchain mints
+* PayChain supply increase
+
+## Level 4: Redemption Reconciliation
+
+Compare:
+
+* Redemption requests
+* Asset locks
+* Burns
+* Bank payouts
+* Returned payouts
+
+## Level 5: Reserve Reconciliation
+
+Compare:
+
+* Eligible fiat reserve
+* PayChain liability
+* Independently observed blockchain supply
+* Required reserve ratio
+
+Reconciliation frequencies:
+
+* Near real time
+* Every 15 minutes
+* Hourly
+* End of day
+* Monthly
+* On demand
+* Before attestation
+* Before and after major minting batches
+
+Exception types:
+
+* Bank balance mismatch
+* Missing bank transaction
+* Duplicate deposit
+* Unmatched deposit
+* Unauthorized mint
+* Mint without reserve
+* Reserve shortfall
+* Supply mismatch
+* Burn mismatch
+* Payout without burn
+* Duplicate payout
+* Stale snapshot
+* Unverified blockchain transaction
+* Currency mismatch
+* Program misallocation
+
+Never silently overwrite mismatches.
+
+---
+
+# 25. Compliance and AML
+
+Build a compliance orchestration layer.
+
+Support:
+
+* Customer due diligence
+* Enhanced due diligence
+* Business due diligence
+* Beneficial-owner checks
+* Sanctions screening
+* PEP screening
+* Adverse-media integration
+* Source-of-funds review
+* Source-of-wealth review
+* Transaction monitoring
+* Suspicious activity case management
+* Regulatory reporting workflow
+* Account restriction
+* Transaction hold
+* Asset hold
+* Redemption hold
+* Deposit return workflow
+
+FATF expects virtual-asset service providers to implement preventive measures comparable to financial institutions, including customer due diligence, record keeping, and suspicious transaction reporting.
+
+Create:
+
+```typescript
+interface ComplianceProvider {
+  screenPerson(
+    input: PersonScreeningInput
+  ): Promise<ScreeningResult>;
+
+  screenBusiness(
+    input: BusinessScreeningInput
+  ): Promise<ScreeningResult>;
+
+  screenDeposit(
+    input: DepositScreeningInput
+  ): Promise<ScreeningResult>;
+
+  screenRedemption(
+    input: RedemptionScreeningInput
+  ): Promise<ScreeningResult>;
+
+  screenWallet(
+    input: WalletScreeningInput
+  ): Promise<ScreeningResult>;
+
+  createCase(
+    input: CreateComplianceCaseInput
+  ): Promise<ComplianceCaseResult>;
+
+  submitRegulatoryReport(
+    input: RegulatoryReportInput
+  ): Promise<RegulatoryReportResult>;
+}
+```
+
+Do not hard-code a single compliance vendor.
+
+---
+
+# 26. Transaction Monitoring
+
+Create configurable monitoring rules:
+
+* Deposit significantly above expected amount
+* Repeated deposits below reporting threshold
+* Rapid deposit followed by redemption
+* Third-party funding
+* Payer name mismatch
+* High-risk jurisdiction
+* Dormant account suddenly active
+* Multiple unrelated payers funding one wallet
+* Multiple wallets redeeming to one bank account
+* One wallet redeeming to multiple unrelated bank accounts
+* Rapid mint and redemption cycle
+* Unusual merchant funding
+* Large round-value transactions
+* Activity inconsistent with customer profile
+* Sanctions or PEP alert
+* Suspicious cross-border pattern
+
+Risk levels:
+
+```text
+LOW
+MEDIUM
+HIGH
+CRITICAL
+```
+
+Actions:
+
+* Allow
+* Allow with monitoring
+* Hold
+* Manual review
+* Reject
+* Return funds
+* Suspend mint
+* Suspend redemption
+* File regulatory report workflow
+
+---
+
+# 27. PayChain Integration APIs
+
+Create a dedicated API gateway:
+
+```text
+https://trust-api.paychain.cambobia.com/api/v1
+```
+
+Recommended endpoints:
+
+## Programs
+
+```text
+GET    /programs
+GET    /programs/{programId}
+GET    /programs/{programId}/status
+```
+
+## Accounts
+
+```text
+GET    /reserve-accounts
+GET    /reserve-accounts/{accountId}
+GET    /reserve-accounts/{accountId}/balance
+```
+
+## Funding
+
+```text
+POST   /funding-instructions
+GET    /funding-instructions/{id}
+GET    /funding-instructions/{id}/status
+POST   /funding-instructions/{id}/cancel
+```
+
+## Deposits
+
+```text
+GET    /deposits
+GET    /deposits/{depositId}
+POST   /deposits/{depositId}/match
+POST   /deposits/{depositId}/allocate
+```
+
+## Minting
+
+```text
+POST   /mint-authorizations
+GET    /mint-authorizations/{id}
+POST   /mint-authorizations/{id}/confirm
+POST   /mint-authorizations/{id}/revoke
+```
+
+## Redemptions
+
+```text
+POST   /redemptions
+GET    /redemptions/{id}
+POST   /redemptions/{id}/confirm-lock
+POST   /redemptions/{id}/confirm-burn
+GET    /redemptions/{id}/payout
+```
+
+## Reserves
+
+```text
+GET    /reserves/current
+GET    /reserves/history
+GET    /reserves/mint-capacity
+GET    /reserves/ratio
+```
+
+## Proof of Reserve
+
+```text
+GET    /proof-of-reserve/latest
+GET    /proof-of-reserve/{snapshotId}
+GET    /attestations
+GET    /attestations/{attestationId}
+```
+
+## Reconciliation
+
+```text
+POST   /reconciliations
+GET    /reconciliations/{id}
+GET    /reconciliation-exceptions
+```
+
+All value-changing APIs must support idempotency.
+
+---
+
+# 28. API Security
+
+Use:
+
+* Mutual TLS
+* OAuth 2.1 client credentials
+* Private-key JWT
+* Request signing
+* Response signing
+* Certificate pinning where appropriate
+* IP allowlisting
+* Nonces
+* Timestamps
+* Replay prevention
+* Idempotency keys
+* Correlation IDs
+* Rate limits
+* API versioning
+
+Every PayChain request must include:
+
+* client ID
+* program ID
+* request ID
+* correlation ID
+* timestamp
+* nonce
+* body hash
+* signature
+
+Reject stale or replayed requests.
+
+---
+
+# 29. Signed Events and Webhooks
+
+Publish events:
+
+```text
+funding.instruction.created
+deposit.detected
+deposit.cleared
+deposit.matched
+deposit.held
+deposit.rejected
+reserve.snapshot.created
+reserve.shortfall.detected
+reserve.restored
+mint.authorization.approved
+mint.authorization.rejected
+mint.authorization.expired
+mint.confirmed
+redemption.approved
+redemption.burn.confirmed
+redemption.payout.submitted
+redemption.payout.confirmed
+redemption.completed
+reconciliation.exception.created
+compliance.hold.created
+program.suspended
+asset.suspended
+```
+
+Use:
+
+* Asymmetric digital signatures
+* Event IDs
+* Sequence numbers
+* Event timestamps
+* Replay protection
+* Retry queues
+* Dead-letter queues
+* Delivery logs
+* Manual replay
+* Secret and certificate rotation
+
+---
+
+# 30. Emergency Controls
+
+The trustee bank must be able to:
+
+* Suspend all mint authorizations
+* Suspend one asset
+* Suspend one program
+* Suspend one tenant
+* Suspend redemptions
+* Suspend payouts
+* Stop PayChain API access
+* Revoke API certificates
+* Place reserve account hold
+* Freeze unmatched deposits
+* Mark proof-of-reserve invalid
+* Require manual approval for all transactions
+* Switch to read-only mode
+* Activate disaster-recovery mode
+
+Emergency actions require:
+
+* Strong authentication
+* Reason
+* Ticket or incident reference
+* Approval
+* Full audit trail
+* Notification to authorized stakeholders
+
+---
+
+# 31. Trustee Bank Portals
+
+## Operations Portal
+
+Support:
+
+* Funding instructions
+* Deposit monitoring
+* Deposit matching
+* Unmatched deposits
+* Mint authorization queue
+* Redemption queue
+* Payout status
+* Exceptions
+* Operational reports
+
+## Treasury Portal
+
+Support:
+
+* Account balances
+* Reserve balances
+* Reserve ratio
+* Mint capacity
+* Redemption liquidity
+* Intraday movements
+* Forecasts
+* Concentration risk
+* Bank charges
+* Liquidity alerts
+
+## Compliance Portal
+
+Support:
+
+* Screening alerts
+* Customer risk
+* Depositor risk
+* Redemption risk
+* Transaction monitoring
+* Compliance cases
+* Holds
+* Regulatory-report workflow
+
+## Audit Portal
+
+Support:
+
+* Read-only accounts
+* Reserve snapshots
+* Bank evidence
+* Liability evidence
+* Reconciliation history
+* Approval history
+* Attestations
+* Immutable audit logs
+* Document export
+
+## Executive Dashboard
+
+Support:
+
+* Total reserve
+* Total liability
+* Reserve ratio
+* Mint capacity
+* Pending deposits
+* Pending mint
+* Pending redemption
+* Compliance holds
+* Reconciliation exceptions
+* Service health
+* Latest attestation
+
+---
+
+# 32. Evidence Management
+
+Store evidence such as:
+
+* Trustee agreements
+* Account-opening documents
+* Bank confirmations
+* Statements
+* Deposit confirmations
+* Payout confirmations
+* Approval records
+* Reconciliation reports
+* Audit reports
+* Attestations
+* Regulatory correspondence
+
+Implement:
+
+* Encryption
+* Retention policy
+* Legal hold
+* Versioning
+* Hashing
+* Access logs
+* Download controls
+* Redaction
+* Watermarking
+* Expiry
+* Document classification
+
+Do not store evidence on a public blockchain.
+
+Only document hashes may be anchored if legally approved.
+
+---
+
+# 33. Data Classification
+
+Classify data as:
+
+```text
+PUBLIC
+INTERNAL
+CONFIDENTIAL
+RESTRICTED
+REGULATORY_RESTRICTED
+```
+
+Examples:
+
+* Public reserve ratio: PUBLIC
+* Aggregated reserve report: INTERNAL or PUBLIC after approval
+* Bank account details: RESTRICTED
+* Customer identity: RESTRICTED
+* Compliance case: REGULATORY_RESTRICTED
+* Core-banking credentials: REGULATORY_RESTRICTED
+
+Apply field-level masking and permission controls.
+
+---
+
+# 34. Audit Trail
+
+Record:
+
+* User
+* Service identity
+* Role
+* Action
+* Before state
+* After state
+* Reason
+* Approval
+* Timestamp
+* IP
+* Device
+* Correlation ID
+* Source system
+* Related financial transaction
+* Related evidence
+
+Audit logs must be:
+
+* Append only
+* Tamper evident
+* Searchable
+* Exportable
+* Retained according to policy
+* Independently backed up
+
+Never allow administrators to delete audit records.
+
+---
+
+# 35. Reporting
+
+Produce:
+
+* Daily reserve report
+* Intraday reserve report
+* Mint authorization report
+* Redemption report
+* Deposit report
+* Unmatched deposit report
+* Reserve shortfall report
+* Reconciliation exception report
+* Compliance hold report
+* Suspicious activity summary
+* Account movement report
+* Liability report
+* Proof-of-reserve report
+* Auditor evidence pack
+* Regulatory reporting pack
+
+Support:
+
+* PDF
+* CSV
+* XLSX
+* API
+* Secure scheduled delivery
+
+---
+
+# 36. Non-Functional Requirements
+
+Design for:
+
+* High availability
+* Horizontal API scaling
+* Worker scaling
+* At-least-once event delivery
+* Idempotent processing
+* Zero confirmed duplicate mint authorizations
+* Zero duplicate payouts
+* Zero unauthorized cross-program reserve allocation
+* Recovery point objective defined by trustee bank
+* Recovery time objective defined by trustee bank
+* Full traceability
+* Strong consistency for approvals and financial entries
+
+Target API availability:
+
+* 99.9% during pilot
+* 99.95% or higher for production, subject to bank approval
+
+---
+
+# 37. Security Requirements
+
+Implement:
+
+* OWASP ASVS controls
+* OWASP API Security controls
+* Secure software development lifecycle
+* Threat modelling
+* SAST
+* DAST
+* Software composition analysis
+* Container scanning
+* Secret scanning
+* Infrastructure scanning
+* Penetration testing
+* Database encryption
+* TLS 1.2 minimum, TLS 1.3 preferred
+* KMS or HSM-backed signing
+* Key rotation
+* Certificate rotation
+* Privileged access monitoring
+* Security incident response
+* Data-loss prevention integration
+* SIEM integration
+
+Never log:
+
+* Full account numbers
+* Passwords
+* Access tokens
+* API secrets
+* Private signing keys
+* KYC documents
+* Compliance evidence
+* Core-banking credentials
+
+---
+
+# 38. Key Management
+
+Use separate keys for:
+
+* API authentication
+* Request signing
+* Response signing
+* Mint-authorization signing
+* Reserve-snapshot signing
+* Attestation signing
+* Webhook signing
+* Document hashing
+* Database encryption
+* Backup encryption
+
+Support:
+
+* HSM
+* Cloud KMS
+* Bank KMS
+* Dual control
+* Key rotation
+* Key revocation
+* Key versioning
+* Emergency disablement
+
+Do not use one signing key for all purposes.
+
+---
+
+# 39. Business Continuity
+
+Provide runbooks for:
+
+* Core banking unavailable
+* PayChain unavailable
+* Blockchain unavailable
+* Bank statement delayed
+* Deposit detected but not cleared
+* Reserve mismatch
+* Reserve shortfall
+* Unauthorized mint detected
+* Duplicate payout attempt
+* Signing service unavailable
+* KMS unavailable
+* Compliance provider unavailable
+* Cybersecurity incident
+* Data corruption
+* Disaster recovery activation
+
+During uncertainty, fail safely:
+
+* Stop minting
+* Preserve redemption assessment
+* Require manual approval
+* Maintain immutable records
+* Notify authorized stakeholders
+
+---
+
+# 40. Feature Flags
+
+Create:
+
+```text
+trustee.platform.enabled
+funding.instructions.enabled
+deposit.auto-detection.enabled
+deposit.auto-matching.enabled
+mint.authorization.enabled
+mint.auto-approval.enabled
+redemption.enabled
+payout.enabled
+proof-of-reserve.enabled
+public-proof-of-reserve.enabled
+attestation.enabled
+core-banking-write.enabled
+manual-fallback.enabled
+cross-border.enabled
+tokenized-deposit.enabled
+stablecoin.enabled
+```
+
+Default high-risk functions to disabled.
+
+Never enable automatic mint approval by default.
+
+---
+
+# 41. Phase 1 — Trustee Reserve Pilot
+
+Build:
+
+* Institutional identity and RBAC
+* Trustee account registry
+* Program registry
+* Core-banking adapter interface
+* Bank-statement import
+* Funding instructions
+* Incoming deposit detection
+* Deposit matching
+* Cleared-funds confirmation
+* Reserve subledger
+* PayChain liability feed
+* Reserve calculation
+* Mint-capacity calculation
+* Manual maker-checker mint authorization
+* Signed mint authorization
+* Mint confirmation
+* Redemption request intake
+* Burn-confirmation intake
+* Manual payout workflow
+* Proof-of-reserve snapshots
+* Daily reconciliation
+* Exception management
+* Audit logs
+* Trustee operations portal
+* Treasury portal
+* Compliance portal foundation
+* PayChain API gateway
+* Signed events
+* Security controls
+* Test automation
+* Deployment documentation
+
+Do not initially enable:
+
+* Automatic mint approval
+* Public stablecoin issuance
+* Automatic high-value payouts
+* Cross-border settlement
+* Public proof-of-reserve without approval
+* Multi-custodian reserve allocation
+* Tokenized deposits
+* Interest-bearing stablecoins
+* Algorithmic stablecoins
+
+---
+
+# 42. Phase 2
+
+Add:
+
+* Live core-banking API
+* Automated deposit matching
+* Automated low-risk reconciliation
+* Compliance-provider integration
+* Transaction monitoring
+* Automated payout integration
+* Intraday reserve monitoring
+* Auditor portal
+* Attestation workflows
+* Regulatory reporting
+* Multi-account reserve structure
+* Enhanced liquidity forecasting
+* HSM integration
+* Disaster recovery
+* Performance testing
+* External penetration testing
+
+---
+
+# 43. Phase 3
+
+Add only after legal and regulatory approval:
+
+* Production stablecoin reserve operation
+* Controlled public minting
+* Controlled public redemption
+* Multi-bank reserve custody
+* Cross-border settlement
+* Tokenized deposits
+* Independent public proof of reserve
+* Regulator integration
+* External auditor automation
+
+---
+
+# 44. Testing
+
+Create:
+
+## Unit Tests
+
+* Reserve calculations
+* Mint capacity
+* Deposit matching
+* Approval rules
+* Double-entry journals
+* Signature verification
+* Liability calculations
+
+## Integration Tests
+
+* Core-banking adapter
+* PayChain API
+* PayChain signed liability feed
+* Bank statements
+* Compliance providers
+* Event delivery
+
+## End-to-End Tests
+
+* Funding instruction to deposit
+* Deposit to reserve
+* Reserve to mint authorization
+* Mint authorization to blockchain confirmation
+* Redemption to burn
+* Burn to payout
+* Payout to completion
+* Proof-of-reserve publication
+
+## Security Tests
+
+* Cross-role access
+* Cross-program reserve use
+* Request replay
+* Signature forgery
+* API certificate revocation
+* Approval bypass
+* Duplicate payout
+* Duplicate mint
+* SQL injection
+* Broken object authorization
+* Privilege escalation
+
+## Financial Integrity Tests
+
+* Journal imbalance
+* Reserve shortfall
+* Stale bank balance
+* Stale PayChain liability
+* Unauthorized supply increase
+* Deposit reversal
+* Payout return
+* Currency mismatch
+* Partial redemption
+* Bank fee deduction
+* Reconciliation exception
+
+---
+
+# 45. Critical Acceptance Criteria
+
+The pilot is accepted only if the following scenario works:
+
+1. PayChain creates a funding instruction.
+2. The Trustee Fund Platform provides a designated bank account and unique reference.
+3. Funds arrive at the trustee bank.
+4. The platform independently detects the transaction.
+5. The deposit is matched.
+6. The bank confirms that the funds are cleared.
+7. Compliance checks pass.
+8. The reserve subledger is updated.
+9. Mint capacity increases.
+10. PayChain requests mint authorization.
+11. A trustee-bank maker reviews it.
+12. A different trustee-bank checker approves it.
+13. The platform issues a signed, time-limited, single-use authorization.
+14. PayChain verifies the authorization.
+15. PayChain mints the exact approved amount.
+16. PayChain reports the blockchain transaction.
+17. The Trustee Fund Platform verifies the result.
+18. Reserve and digital supply reconcile.
+19. A reserve snapshot is generated.
+20. An auditor can verify the complete evidence chain.
+
+Redemption acceptance requires:
+
+1. PayChain submits a redemption.
+2. Compliance validates the customer.
+3. The trustee bank approves the payout.
+4. PayChain locks or burns the asset.
+5. The platform verifies the blockchain result.
+6. The bank executes the payout.
+7. The bank confirms settlement.
+8. The reserve ledger and liability both decrease correctly.
+9. No duplicate payout is possible.
+10. Reconciliation completes without an unexplained difference.
+
+---
+
+# 46. Documentation Deliverables
+
+Produce:
+
+* System architecture
+* Trust and safeguarding operating model
+* Account structure
+* Legal-assumption register
+* Regulatory-control matrix
+* PayChain integration specification
+* Core-banking integration specification
+* Mint sequence diagram
+* Redemption sequence diagram
+* Reserve-calculation methodology
+* Proof-of-reserve methodology
+* Reconciliation methodology
+* Security architecture
+* Threat model
+* Role and segregation-of-duty matrix
+* Data classification
+* Audit model
+* Business continuity plan
+* Incident-response plan
+* Deployment guide
+* Operations manual
+* Compliance operations manual
+* Auditor evidence guide
+* Regulatory readiness checklist
+
+---
+
+# 47. Execution Order
+
+Execute in this order:
+
+1. Inspect the existing PayChain architecture.
+2. Create the legal-assumption register.
+3. Define institutional and program entities.
+4. Define account classifications.
+5. Define PayChain integration contracts.
+6. Define signed event contracts.
+7. Create repository structure.
+8. Create database schema and migrations.
+9. Implement identity and RBAC.
+10. Implement segregation of duties.
+11. Implement trustee account registry.
+12. Implement core-banking abstraction.
+13. Implement bank-statement import.
+14. Implement funding instructions.
+15. Implement deposit detection and matching.
+16. Implement reserve subledger.
+17. Implement PayChain liability feed.
+18. Implement reserve calculations.
+19. Implement mint-capacity calculations.
+20. Implement mint authorization.
+21. Implement mint confirmation.
+22. Implement redemption.
+23. Implement payout controls.
+24. Implement reconciliation.
+25. Implement proof of reserve.
+26. Implement compliance foundation.
+27. Implement portals.
+28. Implement signed APIs and events.
+29. Implement audit and evidence management.
+30. Implement reports.
+31. Add security controls.
+32. Add deployment automation.
+33. Run linting.
+34. Run type checking.
+35. Run tests.
+36. Run security tests.
+37. Run financial-integrity tests.
+38. Run production builds.
+39. Fix all failures.
+40. Produce a completion report.
+
+---
+
+# 48. Completion Report
+
+The final report must contain:
+
+* Features completed
+* Files created
+* Files modified
+* Database migrations
+* APIs implemented
+* Events implemented
+* Account model
+* Reserve model
+* Mint workflow
+* Redemption workflow
+* Compliance controls
+* Security controls
+* Approval controls
+* Test results
+* Build results
+* Reconciliation results
+* Known limitations
+* Legal assumptions requiring confirmation
+* Regulatory decisions requiring confirmation
+* Core-banking dependencies
+* PayChain dependencies
+* Deferred features
+* Production activation risks
+* Recommended next phase
+
+---
+
+# 49. Non-Negotiable Rules
+
+Never:
+
+* Mint without cleared reserve
+* Mint using a screenshot as evidence
+* Mint using an unverified bank receipt
+* Mint against pending funds
+* Mint above available capacity
+* Reuse a mint authorization
+* Complete redemption before payout confirmation
+* Pay out before asset lock or burn where required
+* Permit one person to create and approve a high-risk transaction
+* Allow PayChain to alter bank records
+* Allow the trustee platform to alter blockchain history
+* Delete financial entries
+* Hide reconciliation differences
+* Publish confidential bank data
+* Mix operational funds with safeguarded reserve funds without legal approval
+* Use customer reserve funds for operating expenses
+* Enable stablecoin production merely through a software flag without institutional approval
+
+When uncertain:
+
+* Stop minting
+* Hold the transaction
+* Preserve the evidence
+* Create an exception
+* Escalate for human approval
