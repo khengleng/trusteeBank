@@ -89,6 +89,19 @@ model AbacPolicy {
   @@index([enabled])
 }
 
+// Password reset tokens (§8). Stored as a SHA-256 hash; single-use, expiring.
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 // Replay-prevention nonce store (§28). A nonce may be used once per client
 // within its validity window; the unique constraint blocks replays.
 model NonceUsage {
@@ -631,6 +644,20 @@ model OutboxEvent {
   @@index([eventType])
   @@index([targetPlatform])
   @@index([deliveredAt])
+}
+
+// Per-attempt webhook delivery log (§29 delivery logs) — for debugging client
+// receiver integration: status code, success, error snippet, timestamp.
+model WebhookDelivery {
+  id         String   @id @default(cuid())
+  eventId    String
+  attempt    Int
+  statusCode Int?
+  ok         Boolean  @default(false)
+  error      String?
+  createdAt  DateTime @default(now())
+
+  @@index([eventId])
 }
 
 // ---------------------------------------------------------------------------

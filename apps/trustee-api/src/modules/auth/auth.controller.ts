@@ -11,6 +11,17 @@ class LoginDto {
 class CodeDto {
   @IsString() @IsNotEmpty() code!: string;
 }
+class ChangePasswordDto {
+  @IsString() @IsNotEmpty() currentPassword!: string;
+  @IsString() @IsNotEmpty() newPassword!: string;
+}
+class ForgotPasswordDto {
+  @IsString() @IsNotEmpty() email!: string;
+}
+class ResetPasswordDto {
+  @IsString() @IsNotEmpty() token!: string;
+  @IsString() @IsNotEmpty() newPassword!: string;
+}
 
 /**
  * User login for the trustee admin console (§8): password + TOTP MFA. Open
@@ -45,6 +56,24 @@ export class AuthController {
   @ApiOperation({ summary: 'Confirm and enable TOTP MFA' })
   enable(@Body() dto: CodeDto, @Headers('authorization') authz?: string) {
     return this.userAuth.enableMfa(this.principal(authz).userId, dto.code);
+  }
+
+  @Post('change-password')
+  @ApiOperation({ summary: 'Change your password (requires current password)' })
+  changePassword(@Body() dto: ChangePasswordDto, @Headers('authorization') authz?: string) {
+    return this.userAuth.changePassword(this.principal(authz).userId, dto.currentPassword, dto.newPassword);
+  }
+
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Request a password-reset email (§8)' })
+  forgot(@Body() dto: ForgotPasswordDto) {
+    return this.userAuth.requestPasswordReset(dto.email);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Reset password with an emailed token' })
+  reset(@Body() dto: ResetPasswordDto) {
+    return this.userAuth.resetPassword(dto.token, dto.newPassword);
   }
 
   private principal(authz?: string) {

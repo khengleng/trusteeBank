@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+import { hashPassword } from '@trustee/cryptography';
 import {
   ALL_PERMISSIONS,
   evaluateAbac,
@@ -39,16 +41,22 @@ export class AdminService {
   }
 
   async createUser(input: {
-    email: string; displayName: string; institution: string; roles: string[]; attributes?: unknown; actor: string;
+    email: string; displayName: string; institution: string; roles: string[]; attributes?: unknown; password?: string; actor: string;
   }) {
+    // Give operators a working login. If no password is supplied, generate a
+    // one-time temporary password returned to the admin; the operator sets their
+    // own via change-password and enrolls MFA on first login (mfaEnabled=false).
+    const tempPassword = input.password && input.password.length >= 10 ? undefined : `Tmp!${randomBytes(9).toString('base64url')}`;
+    const password = input.password && input.password.length >= 10 ? input.password : (tempPassword as string);
     const user = await this.prisma.user.create({
       data: {
         email: input.email, displayName: input.displayName, institution: input.institution,
         roles: input.roles, attributes: (input.attributes as object) ?? undefined,
+        passwordHash: hashPassword(password),
       },
     });
-    await this.audit.record({ actor: input.actor, action: 'admin.user.created', subjectType: 'USER', subjectId: user.id, afterState: { roles: input.roles } });
-    return { id: user.id, email: user.email };
+    await this.audit.record({ actor: input.actor, action: 'admin.user.created', subjectType: 'USER', subjectId: user.id, afterState: { roles: input.roles, institution: input.institution } });
+    return { id: user.id, email: user.email, tempPassword };
   }
 
   async setUserRoles(userId: string, roles: string[], actor: string) {
@@ -173,6 +181,57 @@ export class AdminService {
   async listControls() {
     const controls = await this.prisma.platformControl.findMany({ orderBy: { key: 'asc' } });
     return { controls };
+  }
+
+  // --- Signed-event webhooks / outbox (§29) ---
+  async listWebhooks(status?: string, limit = 100) {
+    const where =
+      status === 'dead' ? { deadLettered: true }
+      : status === 'delivered' ? { deliveredAt: { not: null } }
+      : status === 'pending' ? { deliveredAt: null, deadLettered: false }
+      : {};
+    const events = await this.prisma.outboxEvent.findMany({
+      where, orderBy: { sequence: 'desc' }, take: Math.min(limit, 500),
+      select: { id: true, eventType: true, targetPlatform: true, attempts: true, deadLettered: true, deliveredAt: true, createdAt: true },
+    });
+    return {
+      events: events.map((e) => ({
+        id: e.id, eventType: e.eventType, targetPlatform: e.targetPlatform, attempts: e.attempts,
+        status: e.deliveredAt ? 'DELIVERED' : e.deadLettered ? 'DEAD_LETTERED' : 'PENDING',
+        createdAt: e.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  /** Per-attempt delivery log for one event (§29) — for debugging receivers. */
+  async webhookDeliveries(eventId: string) {
+    const deliveries = await this.prisma.webhookDelivery.findMany({
+      where: { eventId }, orderBy: { createdAt: 'asc' },
+    });
+    return {
+      deliveries: deliveries.map((d) => ({
+        attempt: d.attempt, statusCode: d.statusCode, ok: d.ok,
+        error: d.error, at: d.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  /** Re-queue a single event for delivery (§29 manual replay). */
+  async replayWebhook(id: string, actor: string) {
+    await this.prisma.outboxEvent.update({
+      where: { id }, data: { deliveredAt: null, deadLettered: false, attempts: 0 },
+    });
+    await this.audit.record({ actor, action: 'admin.webhook.replayed', subjectType: 'OUTBOX_EVENT', subjectId: id });
+    return { id, requeued: true };
+  }
+
+  /** Re-queue every dead-lettered event (e.g. after a client receiver goes live). */
+  async replayDeadLettered(actor: string) {
+    const res = await this.prisma.outboxEvent.updateMany({
+      where: { deadLettered: true }, data: { deadLettered: false, attempts: 0, deliveredAt: null },
+    });
+    await this.audit.record({ actor, action: 'admin.webhook.replay_all', subjectType: 'OUTBOX_EVENT', afterState: { count: res.count } });
+    return { requeued: res.count };
   }
 
   // --- Client applications, request signing (§28), rate limits (§3) ---

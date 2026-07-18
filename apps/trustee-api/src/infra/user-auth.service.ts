@@ -4,16 +4,19 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import * as QRCode from 'qrcode';
 import {
+  hashPassword,
   verifyPassword,
   generateTotpSecret,
   verifyTotp,
   otpauthUrl,
+  sha256Hex,
 } from '@trustee/cryptography';
 import { PrismaService } from './prisma.service';
 import { ClockService } from './clock.service';
+import { NotificationService } from './notification.service';
 
 export interface UserPrincipal {
   userId: string;
@@ -35,12 +38,84 @@ export class UserAuthService {
   private readonly secret =
     process.env.SESSION_SECRET ?? 'dev-session-secret-change-me';
 
+  private readonly resetTtlSeconds = Number(process.env.PASSWORD_RESET_TTL_SECONDS ?? 3600);
+  private readonly portalUrl = process.env.TRUSTEE_PUBLIC_URL ?? 'https://trustee.cambobia.com';
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly clock: ClockService,
+    private readonly notify: NotificationService,
   ) {
     if (!process.env.SESSION_SECRET) {
       this.logger.warn('SESSION_SECRET not set — using a dev fallback. Set it in production.');
+    }
+  }
+
+  /** Self-service password change (requires the current password). */
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.passwordHash || !verifyPassword(currentPassword, user.passwordHash)) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    this.assertPasswordStrength(newPassword);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hashPassword(newPassword) } });
+    return { changed: true };
+  }
+
+  /**
+   * Forgot-password: issue a single-use, expiring reset token and email a reset
+   * link via Resend. Always resolves the same way whether or not the email
+   * exists (no account enumeration).
+   */
+  async requestPasswordReset(email: string): Promise<{ requested: true }> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (user && !user.disabled) {
+      const token = randomBytes(32).toString('base64url');
+      await this.prisma.passwordReset.create({
+        data: {
+          userId: user.id,
+          tokenHash: sha256Hex(token),
+          expiresAt: new Date(this.clock.now().getTime() + this.resetTtlSeconds * 1000),
+        },
+      });
+      const link = `${this.portalUrl}/?reset_token=${token}`;
+      await this.notify.notify(
+        'Password reset request',
+        `A password reset was requested for ${email}.\nReset your password (valid ${Math.round(
+          this.resetTtlSeconds / 60,
+        )} min): ${link}\nIf you did not request this, ignore this email.`,
+        email, // deliver to the requesting user, not the ops inbox
+      );
+    }
+    return { requested: true };
+  }
+
+  /** Complete a reset with a valid token. */
+  async resetPassword(token: string, newPassword: string) {
+    const row = await this.prisma.passwordReset.findUnique({ where: { tokenHash: sha256Hex(token) } });
+    if (!row || row.usedAt || row.expiresAt.getTime() < this.clock.now().getTime()) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+    this.assertPasswordStrength(newPassword);
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: row.userId }, data: { passwordHash: hashPassword(newPassword) } }),
+      this.prisma.passwordReset.update({ where: { id: row.id }, data: { usedAt: this.clock.now() } }),
+    ]);
+    return { reset: true };
+  }
+
+  /** Admin-initiated reset: set a supplied password for a user (§8). */
+  async adminSetPassword(userId: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new BadRequestException('User not found');
+    this.assertPasswordStrength(newPassword);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: hashPassword(newPassword) } });
+    return { userId, updated: true };
+  }
+
+  private assertPasswordStrength(pw: string): void {
+    if (!pw || pw.length < 10) {
+      throw new BadRequestException('Password must be at least 10 characters');
     }
   }
 
@@ -63,7 +138,7 @@ export class UserAuthService {
     return {
       mfaRequired: false,
       token: this.issueToken({ userId: user.id, email: user.email, institution: user.institution, roles: user.roles }),
-      user: { email: user.email, roles: user.roles, institution: user.institution, mfaEnabled: user.mfaEnabled },
+      user: { userId: user.id, email: user.email, roles: user.roles, institution: user.institution, mfaEnabled: user.mfaEnabled },
     };
   }
 

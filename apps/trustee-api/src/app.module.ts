@@ -14,6 +14,7 @@ import { AttestationModule } from './modules/attestation/attestation.module';
 import { PaykhModule } from './modules/paykh/paykh.module';
 import { RegistryModule } from './modules/registry/registry.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { OperationsModule } from './modules/operations/operations.module';
 import { PortalModule } from './modules/portal/portal.module';
 import { SystemModule } from './modules/system/system.module';
 import { ClientSeparationGuard } from './common/client-separation.guard';
@@ -33,6 +34,7 @@ import { AuthModule } from './modules/auth/auth.module';
     ProgramsModule,
     RegistryModule,
     AdminModule,
+    OperationsModule,
     // PayChain client
     FundingModule,
     DepositsModule,

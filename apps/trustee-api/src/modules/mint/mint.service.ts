@@ -424,6 +424,14 @@ export class MintService {
 
     const mintFeatureEnabled = await this.flags.isEnabled('mint.authorization.enabled');
 
+    // Compliance hold (§25): a compliance officer can freeze minting for a
+    // program or globally via a PlatformControl toggled from the admin portal.
+    const holds = await this.prisma.platformControl.findMany({
+      where: { key: { in: [`compliance.hold.program.${auth.programId}`, 'compliance.hold.global'] }, value: true },
+      select: { key: true },
+    });
+    const complianceHoldActive = holds.length > 0;
+
     return {
       requested: money(auth.amountMinor, auth.currency),
       // `pos.mintCapacity` is the live available capacity: eligible reserve minus
@@ -452,7 +460,7 @@ export class MintService {
       proofOfReserveAgeSeconds: null,
       maxProofOfReserveAgeSeconds: null,
       hasUnresolvedReconciliation: false,
-      complianceHoldActive: false,
+      complianceHoldActive,
       assetMintingSuspended: false,
       programSuspended: program.status === 'SUSPENDED',
       accountRestricted: false,

@@ -87,9 +87,11 @@ is a signed envelope:
 Headers: `X-Trustee-Event-Id`, `X-Trustee-Signature`, `X-Trustee-Signing-Key`,
 `X-Trustee-Correlation-Id`, `X-Idempotency-Key`, `X-Api-Version`.
 
-**Verify:** recompute `bodyHash = sha256(canonical(payload))`; verify `signature`
-(Ed25519) over the canonical envelope subject using the **WEBHOOK** public key.
-Consumers MUST be **idempotent on `eventId`**.
+**Verify:** the `signature` (Ed25519, **WEBHOOK** key) is over the canonical JSON
+of `{ eventType, targetPlatform, payload }`. Also recompute
+`bodyHash = sha256(canonical(payload))` and reject stale timestamps. Consumers
+MUST be **idempotent on `eventId`**. A full copy-paste receiver is in
+[webhook-receiver-example.md](webhook-receiver-example.md).
 
 **PayChain events:** `funding.instruction.created`, `deposit.detected|cleared|matched`,
 `reserve.snapshot.created`, `reserve.shortfall.detected`,

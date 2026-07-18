@@ -15,6 +15,6 @@ import { ReserveModule } from '../reserve/reserve.module';
     ProgramFundsService,
     SettlementsService,
   ],
-  exports: [PaymentOrdersService, ProgramFundsService],
+  exports: [PaymentOrdersService, ProgramFundsService, SettlementsService],
 })
 export class PaykhModule {}

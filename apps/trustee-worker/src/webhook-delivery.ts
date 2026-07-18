@@ -82,15 +82,27 @@ export async function deliverPending(now: Date): Promise<number> {
         ? paykhAdapter(client.webhookUrl)
         : paychainAdapter(client.webhookUrl);
     const result = await adapter.submitSignedEvent(envelope);
+    const attempt = event.attempts + 1;
+
+    // Record this attempt for the delivery log (§29).
+    await prisma.webhookDelivery.create({
+      data: {
+        eventId: event.id,
+        attempt,
+        statusCode: result.statusCode ?? null,
+        ok: result.delivered,
+        error: result.error ? result.error.slice(0, 500) : null,
+      },
+    });
 
     if (result.delivered) {
       await prisma.outboxEvent.update({
         where: { id: event.id },
-        data: { deliveredAt: now, attempts: event.attempts + 1 },
+        data: { deliveredAt: now, attempts: attempt },
       });
       delivered += 1;
     } else {
-      await markAttempt(event.id, event.attempts + 1, result.error);
+      await markAttempt(event.id, attempt, result.error);
     }
   }
   return delivered;

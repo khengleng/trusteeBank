@@ -16,9 +16,15 @@ export class NotificationService {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  async notify(subject: string, text: string): Promise<{ sent: boolean }> {
+  /**
+   * Send a notification. `toOverride` targets a specific recipient (e.g. the
+   * user requesting a password reset); otherwise the configured stakeholder
+   * inbox (NOTIFY_TO) is used for operational alerts (§30).
+   */
+  async notify(subject: string, text: string, toOverride?: string): Promise<{ sent: boolean }> {
+    const recipients = toOverride ? [toOverride] : this.to;
     if (!this.apiKey) {
-      this.logger.warn(`[notify:log-only] ${subject} — ${text}`);
+      this.logger.warn(`[notify:log-only -> ${recipients.join(',')}] ${subject} — ${text}`);
       return { sent: false };
     }
     try {
@@ -30,15 +36,17 @@ export class NotificationService {
         },
         body: JSON.stringify({
           from: this.from,
-          to: this.to,
+          to: recipients,
           subject: `[Trustee] ${subject}`,
           text,
         }),
       });
       if (!res.ok) {
-        this.logger.error(`Resend send failed: ${res.status}`);
+        const detail = await res.text().catch(() => '');
+        this.logger.error(`Resend send failed: ${res.status} ${detail.slice(0, 200)}`);
         return { sent: false };
       }
+      this.logger.log(`Resend email sent: "${subject}" -> ${recipients.join(',')}`);
       return { sent: true };
     } catch (err) {
       this.logger.error(`Resend send error: ${(err as Error).message}`);

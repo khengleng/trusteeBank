@@ -5,6 +5,7 @@ import { ReserveService } from '../reserve/reserve.service';
 import * as ser from '../../common/serialize';
 import { RequirePermission } from '../../common/permission.guard';
 import { Permission } from '@trustee/domain';
+import { UserAuthService } from '../../infra/user-auth.service';
 
 /**
  * Trustee admin API (RBAC/ABAC governance, §8/§9/§30). Mounted under
@@ -17,6 +18,7 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly reserve: ReserveService,
+    private readonly userAuth: UserAuthService,
   ) {}
 
   @Get('permissions')
@@ -45,7 +47,7 @@ export class AdminController {
 
   @Post('users')
   @RequirePermission(Permission.ADMIN_USERS)
-  createUser(@Body() b: { email: string; displayName: string; institution: string; roles: string[]; attributes?: unknown; actor: string }) {
+  createUser(@Body() b: { email: string; displayName: string; institution: string; roles: string[]; attributes?: unknown; password?: string; actor: string }) {
     return this.admin.createUser(b);
   }
 
@@ -63,6 +65,12 @@ export class AdminController {
 
   @Get('users/:id/effective-permissions')
   effectivePermissions(@Param('id') id: string) { return this.admin.effectivePermissions(id); }
+
+  @Put('users/:id/password')
+  @RequirePermission(Permission.ADMIN_USERS)
+  setUserPassword(@Param('id') id: string, @Body() b: { newPassword: string }) {
+    return this.userAuth.adminSetPassword(id, b.newPassword);
+  }
 
   // Roles
   @Get('roles')
@@ -150,5 +158,30 @@ export class AdminController {
   @ApiOperation({ summary: 'Per-client API usage (hourly) for the dashboard (§3)' })
   usage(@Query('hours') hours?: string) {
     return this.admin.usage(hours ? Number(hours) : 24);
+  }
+
+  // Signed-event webhooks / outbox (§29)
+  @Get('webhooks')
+  @ApiOperation({ summary: 'List outbox events (delivered/pending/dead)' })
+  listWebhooks(@Query('status') status?: string) {
+    return this.admin.listWebhooks(status);
+  }
+
+  @Get('webhooks/:id/deliveries')
+  @ApiOperation({ summary: 'Per-attempt delivery log for an event (§29)' })
+  webhookDeliveries(@Param('id') id: string) {
+    return this.admin.webhookDeliveries(id);
+  }
+
+  @Post('webhooks/:id/replay')
+  @RequirePermission(Permission.ADMIN_FEATURE_FLAGS)
+  replayWebhook(@Param('id') id: string, @Body() b: { actor: string }) {
+    return this.admin.replayWebhook(id, b.actor);
+  }
+
+  @Post('webhooks/replay-dead-lettered')
+  @RequirePermission(Permission.ADMIN_FEATURE_FLAGS)
+  replayDead(@Body() b: { actor: string }) {
+    return this.admin.replayDeadLettered(b.actor);
   }
 }
