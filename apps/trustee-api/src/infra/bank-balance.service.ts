@@ -1,56 +1,79 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { money, type Money } from '@trustee/domain';
-import { HttpTrusteeBankAdapter, type TrusteeBankAdapter } from '@trustee/adapters';
+import { HttpTrusteeBankAdapter } from '@trustee/adapters';
+import { PrismaService } from './prisma.service';
+
+export interface AccountBalanceRef {
+  id: string;
+  bankId: string | null;
+  coreBankingRef: string | null;
+  currency: string;
+  mockClearedMinor: bigint;
+}
+
+export interface BankBalanceResult {
+  minor: bigint;
+  currency: string;
+  /** mock | api | manual — how this balance was obtained. */
+  source: 'mock' | 'api' | 'manual';
+  bankId: string | null;
+}
 
 /**
- * Core-banking balance service (update §26). Reads the trustee's real cleared
- * bank balance so reserve figures can be reconciled against what the bank
- * actually holds — turning proof-of-reserve from "trust the ledger" into "prove
- * the ledger". Read-only; the trustee never moves money here.
+ * Multi-bank core-banking balance service (update §26). The trustee holds
+ * reserves across MANY banks; each TrusteeAccount resolves to a BankConnection
+ * that says how to read its balance:
  *
- * - `BANK_API_URL` set -> live reads via {@link HttpTrusteeBankAdapter}.
- * - unset              -> manual/simulation mode (returns null; the ledger stays
- *   authoritative and bank reconciliation is skipped, clearly flagged).
+ * - MOCK (default): operator-set `mockClearedMinor` on the account — lets the
+ *   whole reserve/reconciliation flow work as a mockup with no real bank.
+ * - API: live read via {@link HttpTrusteeBankAdapter} using the connection's
+ *   baseUrl + a token named by `authTokenEnv` (secret never stored in the DB).
+ * - MANUAL/STATEMENT: offline — returns null (ledger stays authoritative).
  *
- * A rolling `lastSuccessfulCheck` timestamp powers the mint guard's
- * bank-connectivity staleness signal (§17).
+ * A rolling `lastSuccessfulCheck` (updated on any live API read) powers the mint
+ * guard's bank-connectivity staleness signal (§17).
  */
 @Injectable()
 export class BankBalanceService {
   private readonly logger = new Logger(BankBalanceService.name);
-  private readonly adapter: TrusteeBankAdapter | null;
   private lastSuccessfulCheck: number | null = null;
-  readonly live: boolean;
 
-  constructor() {
-    const baseUrl = process.env.BANK_API_URL;
-    if (baseUrl) {
-      this.adapter = new HttpTrusteeBankAdapter({
-        baseUrl,
-        authToken: process.env.BANK_API_TOKEN,
-        timeoutMs: Number(process.env.BANK_API_TIMEOUT_MS ?? 10000),
-      });
-      this.live = true;
-    } else {
-      this.adapter = null;
-      this.live = false;
-      this.logger.warn(
-        'BANK_API_URL not set — bank-balance reconciliation runs in manual mode (ledger authoritative, no independent bank check). Configure it for production (§26).',
-      );
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** Cleared balance for a single account, resolving its bank connection. */
+  async clearedBalanceForAccount(account: AccountBalanceRef): Promise<BankBalanceResult | null> {
+    const conn = account.bankId
+      ? await this.prisma.bankConnection.findUnique({ where: { bankId: account.bankId } })
+      : null;
+    const mode = conn?.integrationMode ?? 'MOCK';
+
+    if (mode === 'API' && conn?.baseUrl) {
+      const token = conn.authTokenEnv ? process.env[conn.authTokenEnv] : undefined;
+      const adapter = new HttpTrusteeBankAdapter({ baseUrl: conn.baseUrl, authToken: token });
+      const res = await adapter.getAccountBalance(account.coreBankingRef ?? account.id);
+      this.lastSuccessfulCheck = Date.now();
+      return {
+        minor: BigInt(res.clearedMinor),
+        currency: res.currency || account.currency,
+        source: 'api',
+        bankId: account.bankId,
+      };
     }
+    if (mode === 'MOCK') {
+      return { minor: account.mockClearedMinor, currency: account.currency, source: 'mock', bankId: account.bankId };
+    }
+    // MANUAL / STATEMENT — no automated balance.
+    return null;
   }
 
-  /** Cleared bank balance for an account, or null in manual mode. */
-  async clearedBalance(accountRef: string, currency: string): Promise<Money | null> {
-    if (!this.adapter) return null;
-    const res = await this.adapter.getAccountBalance(accountRef);
-    this.lastSuccessfulCheck = Date.now();
-    return money(BigInt(res.clearedMinor), res.currency || currency);
-  }
-
-  /** Seconds since the last successful bank read, or null if never / manual. */
+  /** Seconds since the last successful LIVE bank read, or null if never/none live. */
   lastCheckAgeSeconds(): number | null {
-    if (this.lastSuccessfulCheck === null) return this.live ? Number.MAX_SAFE_INTEGER : null;
+    if (this.lastSuccessfulCheck === null) return null;
     return Math.max(0, Math.floor((Date.now() - this.lastSuccessfulCheck) / 1000));
+  }
+
+  /** Convenience Money wrapper. */
+  money(minor: bigint, currency: string): Money {
+    return money(minor, currency);
   }
 }

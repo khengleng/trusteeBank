@@ -14,6 +14,21 @@ class ActorBodyDto {
   @IsString() @IsNotEmpty() actor!: string;
 }
 
+class RegisterBankDto {
+  @IsString() @IsNotEmpty() bankId!: string;
+  @IsString() @IsNotEmpty() bankLegalName!: string;
+  @IsOptional() @IsString() country?: string;
+  @IsOptional() @IsString() integrationMode?: string; // MOCK | API | MANUAL | STATEMENT
+  @IsOptional() @IsString() baseUrl?: string;
+  @IsOptional() @IsString() authTokenEnv?: string;
+  @IsString() @IsNotEmpty() actor!: string;
+}
+
+class SetAccountBankDto {
+  @IsOptional() @IsString() bankId?: string;
+  @IsOptional() @IsNumberString() mockClearedMinor?: string;
+}
+
 /**
  * Trustee-bank reserve operations (§16/§26): eligible-reserve adjustments and
  * bank-vs-ledger reconciliation. Mounted under /api/v1/bank so only trustee-bank
@@ -43,8 +58,27 @@ export class ReserveBankController {
   }
 
   @Post('reserves/:programId/bank-reconcile')
-  @ApiOperation({ summary: 'Reconcile reserve ledger cash against the bank balance (§26)' })
+  @ApiOperation({ summary: 'Reconcile reserve ledger cash against the banks (multi-bank, §26)' })
   bankReconcile(@Param('programId') programId: string) {
     return this.reserve.reconcileBank(programId);
+  }
+
+  // --- Multi-bank registry (§26) ---
+  @Post('bank-connections')
+  @ApiOperation({ summary: 'Register/update a bank connection (mock/api/manual, §26)' })
+  registerBank(@Body() dto: RegisterBankDto) {
+    return this.reserve.registerBank(dto);
+  }
+
+  @Get('bank-connections')
+  @ApiOperation({ summary: 'List bank connections' })
+  listBanks() {
+    return this.reserve.listBanks();
+  }
+
+  @Post('reserve-accounts/:id/bank')
+  @ApiOperation({ summary: 'Link an account to a bank / set its mock cleared balance (§26)' })
+  setAccountBank(@Param('id') id: string, @Body() dto: SetAccountBankDto) {
+    return this.reserve.setAccountBank(id, dto);
   }
 }

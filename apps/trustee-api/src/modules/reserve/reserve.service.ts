@@ -318,55 +318,131 @@ export class ReserveService {
   }
 
   /**
-   * Reconcile the internal reserve ledger cash against the bank's reported
-   * cleared balance (§26). Proves the ledger rather than trusting it. Emits a
-   * reconciliation exception event on drift. Skipped (manual mode) when no bank
-   * API is configured.
+   * Reconcile the internal reserve ledger cash against the banks' reported
+   * balances (§26), aggregated across ALL of a program's accounts — the reserve
+   * may be spread over many banks. Each account resolves to its own bank
+   * connection (mock / api / manual). Proves the ledger rather than trusting it;
+   * emits a reconciliation exception on drift. Accounts on manual/offline banks
+   * are reported as uncovered rather than silently assumed correct.
    */
   async reconcileBank(programId: string) {
     const program = await this.program(programId);
     const currency = program.referenceCurrency;
-    const account = await this.prisma.trusteeAccount.findFirst({
+    const accounts = await this.prisma.trusteeAccount.findMany({
       where: { programId },
-      select: { id: true, coreBankingRef: true },
+      select: { id: true, bankId: true, coreBankingRef: true, currency: true, mockClearedMinor: true },
     });
     const ledgerCash = await this.ledger.accountBalance(
       programId,
       LedgerAccountCode.ASSET_TRUSTEE_BANK_CASH,
       currency,
     );
-    const accountRef = account?.coreBankingRef ?? account?.id ?? programId;
-    const bankBalance = await this.bank.clearedBalance(accountRef, currency);
-    if (!bankBalance) {
-      return {
-        programId,
-        mode: 'MANUAL',
-        ledgerCashMinor: ledgerCash.minor.toString(),
-        bankBalanceMinor: null,
-        driftMinor: null,
-        reconciled: null,
-        note: 'BANK_API_URL not configured; ledger is authoritative (no independent bank check).',
-      };
+
+    let bankTotal = 0n;
+    let uncovered = 0;
+    const perBank: Array<{ accountId: string; bankId: string | null; source: string; balanceMinor: string | null }> = [];
+    for (const acc of accounts) {
+      const bal = await this.bank.clearedBalanceForAccount(acc);
+      if (bal) {
+        bankTotal += bal.minor;
+        perBank.push({ accountId: acc.id, bankId: bal.bankId, source: bal.source, balanceMinor: bal.minor.toString() });
+      } else {
+        uncovered += 1;
+        perBank.push({ accountId: acc.id, bankId: acc.bankId, source: 'manual', balanceMinor: null });
+      }
     }
-    const drift = bankBalance.minor - ledgerCash.minor;
-    const reconciled = drift === 0n;
-    if (!reconciled) {
+
+    const covered = accounts.length - uncovered;
+    const drift = bankTotal - ledgerCash.minor;
+    // Only assert reconciliation when every account was independently covered.
+    const reconciled = uncovered === 0 ? drift === 0n : null;
+    if (reconciled === false) {
       await this.events.publish(PlatformEvent.RECONCILIATION_EXCEPTION_CREATED, {
         programId,
         type: 'BANK_LEDGER_DRIFT',
         ledgerCashMinor: ledgerCash.minor.toString(),
-        bankBalanceMinor: bankBalance.minor.toString(),
+        bankTotalMinor: bankTotal.toString(),
         driftMinor: drift.toString(),
       });
     }
     return {
       programId,
-      mode: 'LIVE',
+      currency,
       ledgerCashMinor: ledgerCash.minor.toString(),
-      bankBalanceMinor: bankBalance.minor.toString(),
+      bankTotalMinor: bankTotal.toString(),
       driftMinor: drift.toString(),
       reconciled,
+      accountsCovered: covered,
+      accountsUncovered: uncovered,
+      banks: perBank,
+      note:
+        uncovered > 0
+          ? `${uncovered} account(s) on manual/offline banks — not independently verified.`
+          : undefined,
       asOf: this.clock.nowIso(),
+    };
+  }
+
+  // --- Multi-bank registry (§26) ---
+
+  async registerBank(input: {
+    bankId: string; bankLegalName: string; country?: string;
+    integrationMode?: string; baseUrl?: string; authTokenEnv?: string; actor: string;
+  }) {
+    const modes = ['MOCK', 'API', 'MANUAL', 'STATEMENT'];
+    const mode = input.integrationMode ?? 'MOCK';
+    if (!modes.includes(mode)) throw new NotFoundException(`Unknown integrationMode ${mode}`);
+    const conn = await this.prisma.bankConnection.upsert({
+      where: { bankId: input.bankId },
+      update: {
+        bankLegalName: input.bankLegalName,
+        country: input.country ?? null,
+        integrationMode: mode,
+        baseUrl: input.baseUrl ?? null,
+        authTokenEnv: input.authTokenEnv ?? null,
+      },
+      create: {
+        bankId: input.bankId,
+        bankLegalName: input.bankLegalName,
+        country: input.country ?? null,
+        integrationMode: mode,
+        baseUrl: input.baseUrl ?? null,
+        authTokenEnv: input.authTokenEnv ?? null,
+        createdBy: input.actor,
+      },
+    });
+    return { id: conn.id, bankId: conn.bankId, integrationMode: conn.integrationMode, status: conn.status };
+  }
+
+  async listBanks() {
+    const rows = await this.prisma.bankConnection.findMany();
+    return {
+      banks: rows.map((b) => ({
+        bankId: b.bankId, bankLegalName: b.bankLegalName, country: b.country,
+        integrationMode: b.integrationMode, baseUrl: b.baseUrl, status: b.status,
+      })),
+    };
+  }
+
+  /** Link a trustee account to a bank and/or set its mock cleared balance (§26). */
+  async setAccountBank(accountId: string, input: { bankId?: string; mockClearedMinor?: string }) {
+    const acc = await this.prisma.trusteeAccount.findUnique({ where: { id: accountId } });
+    if (!acc) throw new NotFoundException(`Reserve account ${accountId} not found`);
+    if (input.bankId) {
+      const conn = await this.prisma.bankConnection.findUnique({ where: { bankId: input.bankId } });
+      if (!conn) throw new NotFoundException(`Bank connection ${input.bankId} not registered`);
+    }
+    const updated = await this.prisma.trusteeAccount.update({
+      where: { id: accountId },
+      data: {
+        bankId: input.bankId ?? acc.bankId,
+        mockClearedMinor: input.mockClearedMinor !== undefined ? BigInt(input.mockClearedMinor) : acc.mockClearedMinor,
+      },
+    });
+    return {
+      accountId: updated.id,
+      bankId: updated.bankId,
+      mockClearedMinor: updated.mockClearedMinor.toString(),
     };
   }
 
