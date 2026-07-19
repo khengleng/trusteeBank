@@ -34,6 +34,10 @@ export interface RequestMintAuthorization {
   paychainRequestId: string;
   amountMinor: string;
   fundingDepositIds: string[];
+  // PayChain-supplied; echoed into the signed authorization artifact so PayChain
+  // can gate the mint (trustee-events-contract §mint.authorization.approved).
+  tenantId?: string;
+  destination?: string;
 }
 
 /**
@@ -73,6 +77,8 @@ export class MintService {
         amountMinor: amount.minor,
         currency: program.referenceCurrency,
         fundingDepositIds: input.fundingDepositIds,
+        tenantId: input.tenantId ?? null,
+        destination: input.destination ?? null,
         status: MintAuthorizationStatus.PENDING_MAKER,
         nonce: randomUUID(),
         maxMintAmountMinor: amount.minor,
@@ -225,10 +231,23 @@ export class MintService {
       approvalRef: auth.approval.id,
       afterState: { status: 'ISSUED', capacityMinor: decision.capacity.minor },
     });
-    await this.events.publish(PlatformEvent.MINT_AUTHORIZATION_APPROVED, {
-      authorizationId: authId,
-      programId: auth.programId,
-    });
+    // Emit the artifact-bearing event PayChain gates the mint on
+    // (trustee-events-contract §mint.authorization.approved). `reference` is the
+    // PayChain mint-request id; amount/destination/assetId echo the request.
+    await this.events.publishWithArtifact(
+      PlatformEvent.MINT_AUTHORIZATION_APPROVED,
+      { authorizationId: authId, programId: auth.programId },
+      {
+        authorizationId: authId,
+        reference: auth.paychainRequestId,
+        tenantId: auth.tenantId ?? null,
+        assetId: auth.assetId,
+        amount: auth.amountMinor.toString(),
+        destination: auth.destination ?? null,
+        expiresAt: expiresAt.toISOString(),
+      },
+      SigningPurpose.MINT_AUTHORIZATION,
+    );
 
     return {
       id: authId,

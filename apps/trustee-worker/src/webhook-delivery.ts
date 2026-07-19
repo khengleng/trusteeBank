@@ -108,9 +108,16 @@ export async function deliverPending(now: Date): Promise<number> {
       },
       { keyId: event.signatureKeyId, algorithm: 'ed25519', value: event.signatureValue },
     );
+    envelope.occurredAt = event.createdAt.toISOString();
+    // Artifact-bearing events (trustee-events-contract): surface the inner signed
+    // artifact string + its purpose-key signature as a top-level object.
+    if (event.artifact) {
+      envelope.artifact = event.artifact;
+      envelope.signature = { keyId: event.signatureKeyId, alg: 'ed25519', value: event.signatureValue };
+    }
     // Stripe-style header signature over `${timestampMs}.${rawBody}`. Compute the
-    // rawBody BEFORE attaching header-only fields (the adapter strips them from
-    // the wire body), so worker-signed and adapter-sent bytes are identical.
+    // rawBody AFTER the body-visible fields above but BEFORE header-only fields
+    // (the adapter strips them), so worker-signed and adapter-sent bytes match.
     const rawBody = JSON.stringify(envelope);
     envelope.timestampMs = timestampMs;
     envelope.requestSignature = stripeSignature(timestampMs, rawBody);

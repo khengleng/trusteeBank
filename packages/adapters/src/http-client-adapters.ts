@@ -57,7 +57,9 @@ function wireBody(env: SignedEnvelope): Record<string, unknown> {
 
 function envelopeHeaders(env: SignedEnvelope): Record<string, string> {
   const ts = env.timestampMs || String(Date.parse(env.timestamp) || env.timestamp);
-  const sig = env.requestSignature || env.signature;
+  const sig =
+    env.requestSignature ||
+    (typeof env.signature === 'string' ? env.signature : env.signature.value);
   return {
     // Stripe-style headers (PayKH convention).
     'x-signature': sig,

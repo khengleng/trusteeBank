@@ -169,11 +169,22 @@ export class ReserveService {
       select: { id: true },
     });
 
-    await this.events.publish(PlatformEvent.RESERVE_SNAPSHOT_CREATED, {
-      snapshotId: snapshot.id,
-      programId,
-      reserveRatioBps: pos.reserveRatioBps,
-    });
+    // Emit the artifact-bearing reserve evidence PayChain corroborates minting on
+    // (trustee-events-contract §reserve.snapshot.created).
+    const program = await this.program(programId);
+    await this.events.publishWithArtifact(
+      PlatformEvent.RESERVE_SNAPSHOT_CREATED,
+      { snapshotId: snapshot.id, programId, reserveRatioBps: pos.reserveRatioBps },
+      {
+        snapshotId: snapshot.id,
+        tenantId: program.issuerId,
+        assetId: content.assetId,
+        reserveBalance: pos.eligibleReserve.minor.toString(),
+        currency: pos.currency,
+        asOf: content.timestamp,
+      },
+      SigningPurpose.RESERVE_SNAPSHOT,
+    );
     if (pos.surplus.minor < 0n) {
       await this.events.publish(PlatformEvent.RESERVE_SHORTFALL_DETECTED, {
         programId,

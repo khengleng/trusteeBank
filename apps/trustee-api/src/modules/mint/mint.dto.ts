@@ -13,6 +13,10 @@ export class RequestMintAuthorizationDto {
   @IsString() @IsNotEmpty() paychainRequestId!: string;
   @IsNumberString() amountMinor!: string;
   @IsArray() @ArrayNotEmpty() @IsString({ each: true }) fundingDepositIds!: string[];
+  // Optional PayChain context echoed into the signed mint-authorization artifact
+  // (trustee-events-contract): the tenant the mint is for and the on-chain destination.
+  @IsOptional() @IsString() tenantId?: string;
+  @IsOptional() @IsString() destination?: string;
 }
 
 export class ReviewMintDto {

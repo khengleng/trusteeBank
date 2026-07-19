@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { SigningPurpose } from '@trustee/cryptography';
+import { SigningPurpose, canonicalize } from '@trustee/cryptography';
 import { PrismaService } from '../infra/prisma.service';
 import { SigningService } from '../infra/signing.service';
 
@@ -94,5 +94,39 @@ export class EventsService {
   /** Convenience for PayKH-targeted events. */
   publishToPaykh(eventType: PaykhEvent, payload: Record<string, unknown>) {
     return this.publish(eventType, payload, 'PAYKH');
+  }
+
+  /**
+   * Publish an artifact-bearing event (trustee-events-contract). The artifact is
+   * signed with a PURPOSE-specific key (not the webhook key) so a compromised
+   * webhook key cannot forge a mint authorization or reserve figure. The stored
+   * signatureKeyId/Value are the artifact's signature; the delivery worker places
+   * `artifact` + `signature{keyId,alg,value}` at the top of the POST body.
+   */
+  async publishWithArtifact(
+    eventType: PlatformEvent,
+    payload: Record<string, unknown>,
+    artifact: Record<string, unknown>,
+    purpose: SigningPurpose,
+    targetPlatform: TargetPlatform = 'PAYCHAIN',
+  ): Promise<{ id: string }> {
+    // Sign the canonical artifact; store the exact canonical string so PayChain
+    // verifies over the raw bytes, then JSON.parses.
+    const artifactStr = canonicalize(artifact);
+    const signature = this.signing.sign(purpose, artifact); // signs canonical(artifact) == artifactStr
+    const event = await this.prisma.outboxEvent.create({
+      data: {
+        eventType,
+        targetPlatform,
+        payload: JSON.parse(
+          JSON.stringify(payload, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)),
+        ),
+        artifact: artifactStr,
+        signatureKeyId: signature.keyId,
+        signatureValue: signature.value,
+      },
+      select: { id: true },
+    });
+    return event;
   }
 }

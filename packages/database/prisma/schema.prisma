@@ -457,6 +457,10 @@ model MintAuthorization {
   assetId            String
   amountMinor        BigInt
   currency           String
+  // PayChain-supplied at request time; echoed in the signed authorization
+  // artifact so PayChain can match/gate the mint (trustee-events-contract §mint).
+  tenantId           String?
+  destination        String?
   fundingDepositIds  String[]
   reserveAccountId   String?
   reserveSnapshotId  String?
@@ -634,6 +638,9 @@ model OutboxEvent {
   targetPlatform String  @default("PAYCHAIN")
   sequence      BigInt   @default(autoincrement())
   payload       Json
+  // Inner signed artifact (string) for authorization/evidence events; the
+  // signatureKeyId/Value below are the artifact's purpose-key signature when set.
+  artifact      String?
   signatureKeyId String
   signatureValue String
   deliveredAt   DateTime?

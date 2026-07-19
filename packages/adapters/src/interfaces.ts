@@ -34,9 +34,14 @@ export interface SignedEnvelope {
   nonce: string;
   bodyHash: string;
   signingKeyId: string;
-  signature: string;
+  // String for envelope-only events; an object {keyId,alg,value} for
+  // artifact-bearing events (trustee-events-contract inner signature).
+  signature: string | { keyId: string; alg: string; value: string };
   apiVersion: string;
   payload: Record<string, unknown>;
+  // Inner signed artifact (string) + when it occurred, for artifact-bearing events.
+  artifact?: string;
+  occurredAt?: string;
   // Optional request-style signature (§28 subject) for header-based verifiers.
   requestSignature?: string;
   timestampMs?: string;
