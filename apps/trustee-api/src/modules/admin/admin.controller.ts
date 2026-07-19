@@ -148,6 +148,33 @@ export class AdminController {
     return this.admin.rotateClientSecret(platform, b.actor);
   }
 
+  @Put('clients/:platform/webhook')
+  @RequirePermission(Permission.ADMIN_ROLES)
+  setClientWebhook(@Param('platform') platform: string, @Body() b: { webhookUrl: string; actor: string }) {
+    return this.admin.setClientWebhookUrl(platform, b.webhookUrl, b.actor);
+  }
+
+  // --- Guided program provisioning (replaces DEMO-PUSD) ---------------------
+  @Post('programs')
+  @RequirePermission(Permission.ADMIN_ROLES)
+  createProgram(@Body() b: Parameters<AdminService['createProgram']>[0] & { actor: string }) {
+    const { actor, ...input } = b;
+    return this.admin.createProgram(input, actor);
+  }
+
+  @Post('programs/:id/accounts')
+  @RequirePermission(Permission.ADMIN_ROLES)
+  addTrusteeAccount(@Param('id') id: string, @Body() b: Parameters<AdminService['addTrusteeAccount']>[1] & { actor: string }) {
+    const { actor, ...input } = b;
+    return this.admin.addTrusteeAccount(id, input, actor);
+  }
+
+  @Put('programs/:id/status')
+  @RequirePermission(Permission.ADMIN_EMERGENCY)
+  setProgramStatus(@Param('id') id: string, @Body() b: { status: string; actor: string }) {
+    return this.admin.setProgramStatus(id, b.status, b.actor);
+  }
+
   @Put('clients/:platform/rate-limit')
   @RequirePermission(Permission.ADMIN_FEATURE_FLAGS)
   setClientRateLimit(@Param('platform') platform: string, @Body() b: { rateLimitPerMin: number; actor: string }) {

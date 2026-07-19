@@ -62,8 +62,9 @@ button.ghost{background:none;border:1px solid var(--line);color:var(--fg);border
 <script>
 const API=(window.__API_BASE__||'');
 const S={token:'',tab:'dashboard',email:'',mfaEnabled:false,userId:'',prog:''};
-const TABS=[['dashboard','Dashboard'],['users','Users (RBAC)'],['roles','Roles'],['policies','ABAC Policies'],['flags','Feature Flags'],['controls','Emergency Controls'],['ops','Operations'],['treasury','Treasury'],['ledger','Ledger'],['recon','Reconciliation'],['audit','Audit'],['compliance','Compliance'],['security','Security (2FA)'],['apimgmt','API & Rate Limits'],['webhooks','Webhooks']];
+const TABS=[['dashboard','Dashboard'],['users','Users (RBAC)'],['roles','Roles'],['policies','ABAC Policies'],['flags','Feature Flags'],['controls','Emergency Controls'],['ops','Operations'],['treasury','Treasury'],['ledger','Ledger'],['recon','Reconciliation'],['audit','Audit'],['compliance','Compliance'],['security','Security (2FA)'],['apimgmt','API & Rate Limits'],['provision','Program Setup'],['webhooks','Webhooks']];
 function h(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function val(id){var e=document.getElementById(id);return e?String(e.value).trim():''}
 async function api(path,opts={}){
   const r=await fetch(API+path,{...opts,headers:{'content-type':'application/json',...(S.token?{'authorization':'Bearer '+S.token}:{}),...(opts.headers||{})}});
   const t=await r.text();let b;try{b=t?JSON.parse(t):{}}catch{b={raw:t}}
@@ -86,7 +87,7 @@ async function login(){
 }
 function logout(){sessionStorage.removeItem('tc');S.token='';S.email='';show('login')}
 function renderNav(){document.getElementById('nav').innerHTML=TABS.map(([k,l])=>'<button class="'+(S.tab===k?'active':'')+'" onclick="go(\\''+k+'\\')">'+l+'</button>').join('')}
-function go(t){S.tab=t;renderNav();({dashboard:vDash,users:vUsers,roles:vRoles,policies:vPolicies,flags:vFlags,controls:vControls,security:vSecurity,apimgmt:vApiMgmt,ops:vOps,treasury:vTreasury,ledger:vLedger,recon:vRecon,audit:vAudit,compliance:vCompliance,webhooks:vWebhooks}[t])()}
+function go(t){S.tab=t;renderNav();({dashboard:vDash,users:vUsers,roles:vRoles,policies:vPolicies,flags:vFlags,controls:vControls,security:vSecurity,apimgmt:vApiMgmt,provision:vProvision,ops:vOps,treasury:vTreasury,ledger:vLedger,recon:vRecon,audit:vAudit,compliance:vCompliance,webhooks:vWebhooks}[t])()}
 const V=document.getElementById('view');const set=x=>V.innerHTML=x;
 function actor(){return S.email||'admin'}
 
@@ -235,6 +236,81 @@ async function saveRl(platform){
 async function toggleClient(platform,to){
   if(!confirm((to?'Disable':'Enable')+' API access for '+platform+'?'))return;
   try{await api('/api/v1/admin/clients/'+platform+'/disabled',{method:'PUT',body:JSON.stringify({disabled:to,actor:actor()})});vApiMgmt()}catch(e){alert(e.message)}
+}
+
+// --- Guided program setup (replaces DEMO-PUSD) ---------------------------
+function pf(id,label,ph,val,type){
+  return '<label style="display:block;margin:8px 0"><span class="muted" style="display:block;font-size:12px">'+label+'</span>'
+    +'<input id="'+id+'" type="'+(type||'text')+'" placeholder="'+(ph||'')+'" value="'+(val==null?'':val)+'" style="width:100%;max-width:340px"></label>';
+}
+function vProvision(){
+  var pid=S.newProgramId||'';
+  var grid='style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 18px"';
+  var step1='<div class="card"><h3>1 · Program</h3><div '+grid+'>'
+    +pf('pg_code','Program code','e.g. PUSD-01')+pf('pg_assetId','Asset ID','e.g. PUSD')
+    +pf('pg_ccy','Reference currency','USD')+pf('pg_issuer','Issuer ID','PayChain issuer id')
+    +pf('pg_legalEntity','Legal entity ID','')+pf('pg_trusteeBank','Trustee bank ID','')
+    +pf('pg_legalModel','Legal model','e.g. DECLARATION_OF_TRUST')+pf('pg_regStatus','Regulatory status','e.g. LICENSED')
+    +pf('pg_reservePolicy','Reserve policy','e.g. FULL_RESERVE')+pf('pg_ratio','Required reserve ratio (bps)','10000','','number')
+    +pf('pg_buffer','Safety buffer (bps)','0','0','number')+pf('pg_agreements','Agreement refs (comma-sep)','')
+    +pf('pg_effective','Effective date','','','date')
+    +'</div><button class="btn" onclick="createProgramSubmit()">Create program (DRAFT)</button> <span class="err" id="provErr"></span>'
+    +(pid?'<p class="on" style="margin-top:8px">✓ Program created: <code>'+h(pid)+'</code> (DRAFT)</p>':'')+'</div>';
+  var rest='';
+  if(pid){
+    rest='<div class="card"><h3>2 · Trustee bank account</h3><div '+grid+'>'
+      +pf('ac_masked','Masked account number','**** **** 1234')+pf('ac_name','Account name','Reserve Trust Account')
+      +pf('ac_bank','Bank legal entity','e.g. Cambobia Bank Plc')+pf('ac_core','Core banking ref','')
+      +pf('ac_branch','Branch (optional)','')+pf('ac_ccy','Currency','USD')
+      +pf('ac_class','Classification','e.g. TRUST_RESERVE')
+      +'<label style="display:block;margin:8px 0"><span class="muted" style="display:block;font-size:12px">Balance source</span><select id="ac_src" style="width:100%;max-width:340px"><option>MANUAL</option><option>API</option><option>STATEMENT</option></select></label>'
+      +pf('ac_intmode','Integration mode','e.g. MANUAL')
+      +'</div><button class="btn" onclick="addAccountSubmit()">Add account</button> <span class="err" id="acErr"></span><span id="acOk"></span></div>'
+      +'<div class="card"><h3>3 · Partner webhook URLs &amp; secrets</h3>'
+      +'<div class="row"><span style="width:90px"><b>PayChain</b></span><input id="wh_PAYCHAIN" placeholder="https://api.paychain.cambobia.com/api/v1/trustee/events" style="flex:1"><button class="ghost" onclick="saveWebhook(\\'PAYCHAIN\\')">Save</button><button class="ghost" onclick="rotateSecret(\\'PAYCHAIN\\')">Rotate secret</button></div>'
+      +'<div class="row" style="margin-top:8px"><span style="width:90px"><b>PayKH</b></span><input id="wh_PAYKH" placeholder="https://api.paykh.cambobia.com/api/v1/trustee/events" style="flex:1"><button class="ghost" onclick="saveWebhook(\\'PAYKH\\')">Save</button><button class="ghost" onclick="rotateSecret(\\'PAYKH\\')">Rotate secret</button></div>'
+      +'<div id="secOut" style="margin-top:10px"></div></div>'
+      +'<div class="card"><h3>4 · Activate</h3><p class="muted">Activation should be performed by a second operator (segregation of duties). This flips the program from DRAFT to ACTIVE — scheduled proof-of-reserve and reconciliation begin.</p>'
+      +'<button class="btn" onclick="activateProgram()">Activate program</button> <span class="err" id="actErr"></span><span id="actOk"></span></div>';
+  }
+  set('<h2>Program setup</h2><p class="muted">Provision a real trustee program to replace the demo. Created in <b>DRAFT</b>; goes live only on activation.</p>'+step1+rest);
+}
+async function createProgramSubmit(){
+  document.getElementById('provErr').textContent='';
+  var body={
+    code:val('pg_code'),assetId:val('pg_assetId'),referenceCurrency:val('pg_ccy'),issuerId:val('pg_issuer'),
+    legalEntityId:val('pg_legalEntity'),trusteeBankId:val('pg_trusteeBank'),legalModel:val('pg_legalModel'),
+    regulatoryStatus:val('pg_regStatus'),reservePolicy:val('pg_reservePolicy'),
+    requiredRatioBps:Number(val('pg_ratio')||'10000'),safetyBufferBps:Number(val('pg_buffer')||'0'),
+    agreementReferences:(val('pg_agreements')||'').split(',').map(function(s){return s.trim()}).filter(Boolean),
+    effectiveDate:val('pg_effective')||new Date().toISOString(),actor:actor()};
+  try{var r=await api('/api/v1/admin/programs',{method:'POST',body:JSON.stringify(body)});S.newProgramId=r.id;vProvision();}
+  catch(e){document.getElementById('provErr').textContent=e.message||'Create failed'}
+}
+async function addAccountSubmit(){
+  document.getElementById('acErr').textContent='';
+  var body={maskedAccountNumber:val('ac_masked'),accountName:val('ac_name'),bankLegalEntity:val('ac_bank'),
+    coreBankingRef:val('ac_core'),branch:val('ac_branch'),currency:val('ac_ccy'),classification:val('ac_class'),
+    balanceSource:val('ac_src'),integrationMode:val('ac_intmode'),actor:actor()};
+  try{await api('/api/v1/admin/programs/'+S.newProgramId+'/accounts',{method:'POST',body:JSON.stringify(body)});document.getElementById('acOk').innerHTML=' <span class="on">✓ account added</span>'}
+  catch(e){document.getElementById('acErr').textContent=e.message||'Failed'}
+}
+async function saveWebhook(platform){
+  var url=val('wh_'+platform);
+  try{await api('/api/v1/admin/clients/'+platform+'/webhook',{method:'PUT',body:JSON.stringify({webhookUrl:url,actor:actor()})});alert(platform+' webhook URL saved')}
+  catch(e){alert(e.message||'Failed')}
+}
+async function rotateSecret(platform){
+  if(!confirm('Rotate the '+platform+' client secret? The previous secret stops working immediately — you must give the new one to '+platform+'.'))return;
+  try{var r=await api('/api/v1/admin/clients/'+platform+'/rotate-secret',{method:'POST',body:JSON.stringify({actor:actor()})});
+    document.getElementById('secOut').innerHTML='<div class="card" style="border-color:var(--acc)"><b>'+h(platform)+' new secret (shown once):</b><br><code>'+h(r.clientSecret)+'</code><p class="muted">Client id: <code>'+h(r.clientId)+'</code>. Hand these to '+h(platform)+' now.</p></div>'}
+  catch(e){alert(e.message||'Failed')}
+}
+async function activateProgram(){
+  document.getElementById('actErr').textContent='';
+  if(!confirm('Activate this program? Scheduled proof-of-reserve and reconciliation will begin.'))return;
+  try{await api('/api/v1/admin/programs/'+S.newProgramId+'/status',{method:'PUT',body:JSON.stringify({status:'ACTIVE',actor:actor()})});document.getElementById('actOk').innerHTML=' <span class="on">✓ ACTIVE</span>'}
+  catch(e){document.getElementById('actErr').textContent=e.message||'Failed (activation may require a different operator role)'}
 }
 
 async function forgot(){

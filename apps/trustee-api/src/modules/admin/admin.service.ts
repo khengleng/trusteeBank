@@ -376,6 +376,119 @@ export class AdminService {
       note: 'Store this secret now — it is shown only once. The previous secret is now invalid.',
     };
   }
+
+  // --- Real program provisioning (guided setup; replaces DEMO-PUSD) ----------
+
+  /** Register the client's webhook URL for signed-event delivery. */
+  async setClientWebhookUrl(platform: string, webhookUrl: string, actor: string) {
+    if (!/^https:\/\/.+/.test(webhookUrl)) {
+      throw new BadRequestException('webhookUrl must be an absolute https URL');
+    }
+    const client = await this.prisma.clientApplication.update({
+      where: { platform }, data: { webhookUrl }, select: { platform: true, webhookUrl: true },
+    });
+    await this.audit.record({
+      actor, action: 'admin.client.webhook_updated', subjectType: 'CLIENT_APPLICATION', subjectId: platform,
+      afterState: { webhookUrl },
+    });
+    return client;
+  }
+
+  /**
+   * Create a real trustee program. Starts in DRAFT (never live on creation) so a
+   * second operator activates it after the trustee account is attached and the
+   * partner webhook URLs are set (segregation of duties, §9).
+   */
+  async createProgram(input: CreateProgramInput, actor: string) {
+    const req = <T,>(v: T | undefined | null, name: string): T => {
+      if (v === undefined || v === null || v === '') throw new BadRequestException(`${name} is required`);
+      return v;
+    };
+    const program = await this.prisma.program.create({
+      data: {
+        code: req(input.code, 'code'),
+        legalEntityId: req(input.legalEntityId, 'legalEntityId'),
+        issuerId: req(input.issuerId, 'issuerId'),
+        trusteeBankId: req(input.trusteeBankId, 'trusteeBankId'),
+        assetId: req(input.assetId, 'assetId'),
+        referenceCurrency: req(input.referenceCurrency, 'referenceCurrency'),
+        legalModel: req(input.legalModel, 'legalModel'),
+        regulatoryStatus: req(input.regulatoryStatus, 'regulatoryStatus'),
+        reservePolicy: req(input.reservePolicy, 'reservePolicy'),
+        requiredRatioBps: input.requiredRatioBps ?? 10000,
+        safetyBufferBps: input.safetyBufferBps ?? 0,
+        agreementReferences: input.agreementReferences ?? [],
+        effectiveDate: new Date(req(input.effectiveDate, 'effectiveDate')),
+        status: 'DRAFT',
+      },
+      select: { id: true, code: true, status: true },
+    });
+    await this.audit.record({
+      actor, action: 'admin.program.created', subjectType: 'PROGRAM', subjectId: program.id,
+      afterState: { code: program.code, assetId: input.assetId },
+    });
+    return program;
+  }
+
+  /** Attach a trustee bank account (masked number only) to a program. */
+  async addTrusteeAccount(programId: string, input: CreateAccountInput, actor: string) {
+    const program = await this.prisma.program.findUnique({ where: { id: programId } });
+    if (!program) throw new NotFoundException(`Program ${programId} not found`);
+    const req = <T,>(v: T | undefined | null, name: string): T => {
+      if (v === undefined || v === null || v === '') throw new BadRequestException(`${name} is required`);
+      return v;
+    };
+    const account = await this.prisma.trusteeAccount.create({
+      data: {
+        programId,
+        maskedAccountNumber: req(input.maskedAccountNumber, 'maskedAccountNumber'),
+        coreBankingRef: req(input.coreBankingRef, 'coreBankingRef'),
+        accountName: req(input.accountName, 'accountName'),
+        bankLegalEntity: req(input.bankLegalEntity, 'bankLegalEntity'),
+        branch: input.branch ?? null,
+        currency: req(input.currency, 'currency'),
+        classification: req(input.classification, 'classification'),
+        supportedAssetId: input.supportedAssetId ?? program.assetId,
+        balanceSource: input.balanceSource ?? 'MANUAL',
+        integrationMode: input.integrationMode ?? 'MANUAL',
+        restricted: input.restricted ?? false,
+        status: 'PENDING_ACTIVATION',
+      },
+      select: { id: true, maskedAccountNumber: true, accountName: true, status: true },
+    });
+    await this.audit.record({
+      actor, action: 'admin.trustee_account.created', subjectType: 'TRUSTEE_ACCOUNT', subjectId: account.id,
+      afterState: { programId, accountName: account.accountName },
+    });
+    return account;
+  }
+
+  /** Change program lifecycle status (e.g. DRAFT -> ACTIVE activation). */
+  async setProgramStatus(programId: string, status: string, actor: string) {
+    const allowed = ['DRAFT', 'ACTIVE', 'SUSPENDED', 'EXPIRED', 'CLOSED'];
+    if (!allowed.includes(status)) throw new BadRequestException(`status must be one of ${allowed.join(', ')}`);
+    const program = await this.prisma.program.update({
+      where: { id: programId }, data: { status: status as never }, select: { id: true, code: true, status: true },
+    });
+    await this.audit.record({
+      actor, action: 'admin.program.status_changed', subjectType: 'PROGRAM', subjectId: programId,
+      afterState: { status },
+    });
+    return program;
+  }
+}
+
+interface CreateProgramInput {
+  code?: string; legalEntityId?: string; issuerId?: string; trusteeBankId?: string;
+  assetId?: string; referenceCurrency?: string; legalModel?: string; regulatoryStatus?: string;
+  reservePolicy?: string; requiredRatioBps?: number; safetyBufferBps?: number;
+  agreementReferences?: string[]; effectiveDate?: string;
+}
+
+interface CreateAccountInput {
+  maskedAccountNumber?: string; coreBankingRef?: string; accountName?: string; bankLegalEntity?: string;
+  branch?: string; currency?: string; classification?: string; supportedAssetId?: string;
+  balanceSource?: string; integrationMode?: string; restricted?: boolean;
 }
 
 interface PolicyInput {
