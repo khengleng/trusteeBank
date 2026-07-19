@@ -237,6 +237,12 @@ model TrusteeAccount {
   status              AccountStatus @default(PENDING_ACTIVATION)
   balanceSource       String   // API | STATEMENT | MANUAL
   integrationMode     String
+  // Which bank connection this account is held at (§26 multi-bank). Reserves may
+  // be spread across many banks; each account resolves to one BankConnection.
+  bankId              String?
+  // Operator-set mock cleared balance used when the account's bank is in MOCK
+  // mode (no live core-banking integration yet).
+  mockClearedMinor    BigInt   @default(0)
   minimumBalanceMinor BigInt   @default(0)
   requiredReserveBps  Int      @default(10000)
   restricted          Boolean  @default(false)
@@ -416,6 +422,28 @@ model LiabilitySnapshot {
 
   @@unique([programId, sequence])
   @@index([programId])
+}
+
+// ---------------------------------------------------------------------------
+// Bank connections (update §26) — the trustee holds reserves across MANY banks,
+// not one. Each connection describes how to reach a bank (mock / API / manual);
+// each TrusteeAccount links to one via bankId. Secrets are never stored here —
+// `authTokenEnv` names the env var holding the bearer token.
+// ---------------------------------------------------------------------------
+
+model BankConnection {
+  id              String   @id @default(cuid())
+  bankId          String   @unique  // stable key, e.g. WING | ABA | ACLEDA
+  bankLegalName   String
+  country         String?
+  // MOCK: operator-set balances; API: live core-banking; MANUAL/STATEMENT: offline.
+  integrationMode String   @default("MOCK")
+  baseUrl         String?  // for API mode
+  authTokenEnv    String?  // name of the env var holding the bearer token (not the secret)
+  status          String   @default("ACTIVE")
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // ---------------------------------------------------------------------------
