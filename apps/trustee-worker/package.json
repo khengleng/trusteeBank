@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@trustee/adapters": "*",
+    "@trustee/cryptography": "*",
     "@trustee/database": "*",
     "@trustee/domain": "*"
   },

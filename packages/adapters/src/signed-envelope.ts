@@ -50,6 +50,8 @@ export function buildSignedEnvelope(input: EnvelopeInput, signature: Signature):
   const { bodyHash } = envelopeSigningSubject(input);
   return {
     ...input,
+    id: input.eventId,
+    type: input.eventType,
     programId: input.programId,
     bodyHash,
     signingKeyId: signature.keyId,

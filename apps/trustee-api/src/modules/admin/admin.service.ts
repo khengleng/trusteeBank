@@ -12,6 +12,7 @@ import { AuditService } from '../../infra/audit.service';
 import { FeatureFlagsService } from '../../infra/feature-flags.service';
 import { NotificationService } from '../../infra/notification.service';
 import { RateLimitService } from '../../infra/rate-limit.service';
+import { ClockService } from '../../infra/clock.service';
 
 /**
  * Trustee admin operations: RBAC (users/roles), ABAC (approval policies),
@@ -25,6 +26,7 @@ export class AdminService {
     private readonly flags: FeatureFlagsService,
     private readonly notify: NotificationService,
     private readonly rateLimit: RateLimitService,
+    private readonly clock: ClockService,
   ) {}
 
   permissionCatalog(): readonly string[] {
@@ -201,6 +203,56 @@ export class AdminService {
         createdAt: e.createdAt.toISOString(),
       })),
     };
+  }
+
+  /**
+   * Live outbound-integration health: probe each client's webhook receiver and
+   * classify it, plus the outbox backlog. Green = configured/accepting,
+   * amber = deployed-but-unconfigured, red = missing/unreachable.
+   */
+  async integrationHealth() {
+    const clients = await this.prisma.clientApplication.findMany({
+      where: { platform: { in: ['PAYCHAIN', 'PAYKH'] } },
+      select: { platform: true, webhookUrl: true },
+    });
+    const probes = await Promise.all(
+      clients.map(async (c) => {
+        if (!c.webhookUrl) return { platform: c.platform, webhookUrl: null, httpStatus: null, state: 'NO_URL', detail: 'no webhook URL registered' };
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        try {
+          const res = await fetch(c.webhookUrl, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ probe: true }),
+            signal: controller.signal,
+          });
+          const state =
+            res.status === 404 ? 'MISSING'
+            : res.status === 503 ? 'DEPLOYED_UNCONFIGURED'
+            : res.status === 401 || res.status === 400 ? 'CONFIGURED'
+            : res.status >= 200 && res.status < 300 ? 'ACCEPTING'
+            : 'UNREACHABLE';
+          const detail =
+            state === 'MISSING' ? 'endpoint not implemented'
+            : state === 'DEPLOYED_UNCONFIGURED' ? 'endpoint deployed, awaiting config (WEBHOOK key)'
+            : state === 'CONFIGURED' ? 'endpoint live, rejecting our unsigned probe (verifying)'
+            : state === 'ACCEPTING' ? 'endpoint accepting'
+            : `unexpected HTTP ${res.status}`;
+          return { platform: c.platform, webhookUrl: c.webhookUrl, httpStatus: res.status, state, detail };
+        } catch (err) {
+          return { platform: c.platform, webhookUrl: c.webhookUrl, httpStatus: null, state: 'UNREACHABLE', detail: (err as Error).name === 'AbortError' ? 'timeout' : (err as Error).message };
+        } finally {
+          clearTimeout(timer);
+        }
+      }),
+    );
+    const [dead, pending, delivered] = await Promise.all([
+      this.prisma.outboxEvent.count({ where: { deadLettered: true } }),
+      this.prisma.outboxEvent.count({ where: { deliveredAt: null, deadLettered: false } }),
+      this.prisma.outboxEvent.count({ where: { deliveredAt: { not: null } } }),
+    ]);
+    return { checkedAt: this.clock.nowIso(), clients: probes, outbox: { deadLettered: dead, pending, delivered } };
   }
 
   /** Per-attempt delivery log for one event (§29) — for debugging receivers. */

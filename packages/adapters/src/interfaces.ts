@@ -19,6 +19,9 @@ export interface DeliveryResult {
 
 /** Fields every outbound integration request/webhook carries (§8, domain config). */
 export interface SignedEnvelope {
+  // Stripe-style aliases (id/type) alongside the trustee-native eventId/eventType.
+  id: string;
+  type: string;
   eventId: string;
   eventType: string;
   eventSequence: string;
@@ -34,6 +37,9 @@ export interface SignedEnvelope {
   signature: string;
   apiVersion: string;
   payload: Record<string, unknown>;
+  // Optional request-style signature (§28 subject) for header-based verifiers.
+  requestSignature?: string;
+  timestampMs?: string;
 }
 
 // --- PayChain adapter (§4) --------------------------------------------------

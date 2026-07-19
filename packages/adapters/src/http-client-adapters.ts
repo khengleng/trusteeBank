@@ -45,10 +45,30 @@ async function post(
   }
 }
 
+/**
+ * The exact JSON body delivered on the wire: the envelope minus header-only
+ * fields (`requestSignature`, `timestampMs`). The worker computes the Stripe
+ * signature over this same serialization, so signed and sent bytes match.
+ */
+function wireBody(env: SignedEnvelope): Record<string, unknown> {
+  const { requestSignature: _rs, timestampMs: _ts, ...body } = env;
+  return body;
+}
+
 function envelopeHeaders(env: SignedEnvelope): Record<string, string> {
+  const ts = env.timestampMs || String(Date.parse(env.timestamp) || env.timestamp);
+  const sig = env.requestSignature || env.signature;
   return {
+    // Stripe-style headers (PayKH convention).
+    'x-signature': sig,
+    'x-timestamp': ts,
+    'x-nonce': env.nonce,
+    'x-signing-key-id': env.signingKeyId,
+    // Trustee-prefixed headers (PayChain convention).
+    'x-trustee-signature': sig,
+    'x-trustee-timestamp': ts,
+    'x-trustee-delivery': env.eventId,
     'x-trustee-event-id': env.eventId,
-    'x-trustee-signature': env.signature,
     'x-trustee-signing-key': env.signingKeyId,
     'x-trustee-correlation-id': env.correlationId,
     'x-idempotency-key': env.requestId,
@@ -74,7 +94,7 @@ export class HttpPayChainAdapter implements PayChainAdapter {
     try {
       const r = await post(
         this.config.webhookUrl,
-        envelope,
+        wireBody(envelope),
         envelopeHeaders(envelope),
         this.config.timeoutMs ?? 10000,
       );
@@ -101,7 +121,7 @@ export class HttpPayKHAdapter implements PayKHAdapter {
     try {
       const r = await post(
         this.config.webhookUrl,
-        envelope,
+        wireBody(envelope),
         envelopeHeaders(envelope),
         this.config.timeoutMs ?? 10000,
       );

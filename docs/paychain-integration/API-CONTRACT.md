@@ -87,10 +87,29 @@ is a signed envelope:
 Headers: `X-Trustee-Event-Id`, `X-Trustee-Signature`, `X-Trustee-Signing-Key`,
 `X-Trustee-Correlation-Id`, `X-Idempotency-Key`, `X-Api-Version`.
 
-**Verify:** the `signature` (Ed25519, **WEBHOOK** key) is over the canonical JSON
-of `{ eventType, targetPlatform, payload }`. Also recompute
-`bodyHash = sha256(canonical(payload))` and reject stale timestamps. Consumers
-MUST be **idempotent on `eventId`**. A full copy-paste receiver is in
+**Headers sent on every delivery:**
+```
+X-Signature:      base64 Ed25519 (see below)      X-Trustee-Event-Id:   <eventId>
+X-Timestamp:      <epoch milliseconds>            X-Trustee-Signature:  <body signature>
+X-Nonce:          <unique>                        X-Trustee-Signing-Key:<keyId>
+X-Signing-Key-Id: webhook-v1                       X-Api-Version:        v1
+```
+
+**Two verifiable signatures are provided — verify EITHER:**
+
+1. **Header signature** `X-Signature` (Ed25519, **WEBHOOK** key) over the canonical
+   JSON of the **request subject**:
+   ```
+   { "method":"POST", "path":"/api/v1/trustee/events",
+     "clientId": <your clientId>, "timestamp": <X-Timestamp>,
+     "nonce": <X-Nonce>, "bodyHash": sha256_hex(canonical(payload)) }
+   ```
+2. **Body signature** `body.signature` / `X-Trustee-Signature` (Ed25519, **WEBHOOK**
+   key) over the canonical JSON of `{ eventType, targetPlatform, payload }`.
+
+`canonical` = JSON with object keys sorted recursively, bigint as decimal string,
+no insignificant whitespace. Signatures are **base64**. Reject stale `X-Timestamp`,
+recompute `bodyHash`, and be **idempotent on `eventId`**. Full receiver:
 [webhook-receiver-example.md](webhook-receiver-example.md).
 
 **PayChain events:** `funding.instruction.created`, `deposit.detected|cleared|matched`,

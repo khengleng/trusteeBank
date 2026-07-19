@@ -91,7 +91,8 @@ const V=document.getElementById('view');const set=x=>V.innerHTML=x;
 function actor(){return S.email||'admin'}
 
 async function vDash(){
-  set('<h2>Operations dashboard</h2><div id="d">Loading…</div>');
+  set('<h2>Operations dashboard</h2><div id="ih" class="card">Checking integrations…</div><div id="d">Loading…</div>');
+  ihStart();
   try{
     const [progs,flags,controls]=await Promise.all([api('/api/v1/trustee/programs'),api('/api/v1/admin/feature-flags'),api('/api/v1/admin/controls')]);
     let reserve=null;const p=(progs.programs||[])[0];
@@ -385,6 +386,21 @@ async function whLog(id){
 }
 async function replayWh(id){try{await api('/api/v1/admin/webhooks/'+id+'/replay',{method:'POST',body:JSON.stringify({actor:actor()})});whLoad();}catch(e){alert(e.message)}}
 async function replayDead(){if(!confirm('Re-queue ALL dead-lettered events for delivery?'))return;try{var r=await api('/api/v1/admin/webhooks/replay-dead-lettered',{method:'POST',body:JSON.stringify({actor:actor()})});alert('Re-queued '+r.requeued+' events.');whLoad();}catch(e){alert(e.message)}}
+
+function ihBadge(st){var m={CONFIGURED:['🟢','var(--ok)','configured'],ACCEPTING:['🟢','var(--ok)','accepting'],DEPLOYED_UNCONFIGURED:['🟡','var(--warn)','deployed · not configured'],MISSING:['🔴','var(--bad)','not implemented'],UNREACHABLE:['🔴','var(--bad)','unreachable'],NO_URL:['⚪','var(--mut)','no webhook URL']};return m[st]||['⚪','var(--mut)',st];}
+async function ihLoad(){
+  var box=document.getElementById('ih');if(!box)return;
+  try{var r=await api('/api/v1/admin/integration-health');
+    var anyGreen=r.clients.some(c=>c.state==='CONFIGURED'||c.state==='ACCEPTING');
+    box.innerHTML='<div class="row" style="justify-content:space-between"><h3 style="margin:0">Outbound integration health</h3><span class="muted">auto-refresh · '+h(r.checkedAt.slice(11,19))+'Z</span></div>'
+      +'<table style="margin-top:8px"><tr><th>Client</th><th>Receiver</th><th>Status</th><th>HTTP</th></tr>'
+      +r.clients.map(function(c){var b=ihBadge(c.state);return '<tr><td><b>'+h(c.platform)+'</b></td><td class="muted" style="font-size:12px">'+h(c.webhookUrl||'')+'</td><td style="color:'+b[1]+'">'+b[0]+' '+b[2]+'<div class="muted" style="font-size:12px">'+h(c.detail)+'</div></td><td>'+(c.httpStatus==null?'—':c.httpStatus)+'</td></tr>';}).join('')
+      +'</table>'
+      +'<div class="row" style="margin-top:10px"><span class="muted">Outbox:</span> <span>delivered '+r.outbox.delivered+'</span> · <span>pending '+r.outbox.pending+'</span> · <span'+(r.outbox.deadLettered?' class="danger"':'')+'>dead-lettered '+r.outbox.deadLettered+'</span>'
+      +(r.outbox.deadLettered&&anyGreen?' <button class="btn" data-act="replayDead">Replay dead-lettered</button>':'')+'</div>';
+  }catch(e){box.innerHTML='<span class="danger">integration health: '+h(e.message)+'</span>'}
+}
+function ihStart(){ihLoad();if(window.__ihTimer)clearInterval(window.__ihTimer);window.__ihTimer=setInterval(function(){if(S.tab==='dashboard'){ihLoad()}else{clearInterval(window.__ihTimer);window.__ihTimer=null}},30000);}
 
 // delegated click handler for all data-act controls (avoids inline quote escaping)
 document.addEventListener('click',function(ev){

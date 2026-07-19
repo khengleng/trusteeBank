@@ -160,6 +160,12 @@ export class AdminController {
     return this.admin.usage(hours ? Number(hours) : 24);
   }
 
+  @Get('integration-health')
+  @ApiOperation({ summary: 'Live outbound-integration health (probe client receivers)' })
+  integrationHealth() {
+    return this.admin.integrationHealth();
+  }
+
   // Signed-event webhooks / outbox (§29)
   @Get('webhooks')
   @ApiOperation({ summary: 'List outbox events (delivered/pending/dead)' })
