@@ -23,6 +23,7 @@ import { RateLimitGuard } from './common/rate-limit.guard';
 import { PermissionGuard } from './common/permission.guard';
 import { DomainExceptionFilter } from './common/domain-exception.filter';
 import { AuthModule } from './modules/auth/auth.module';
+import { SchedulerModule } from './modules/scheduler/scheduler.module';
 
 @Module({
   imports: [
@@ -46,6 +47,8 @@ import { AuthModule } from './modules/auth/auth.module';
     AttestationModule,
     // PayKH client
     PaykhModule,
+    // Recurring operational jobs (proof-of-reserve, reconciliation, alerting)
+    SchedulerModule,
   ],
   providers: [
     // Order matters: authenticate + attach principal, verify request signature,
