@@ -142,6 +142,12 @@ export class AdminController {
     return this.admin.setClientKey(platform, b.publicKeyPem ?? null, b.requireSignature, b.actor);
   }
 
+  @Post('clients/:platform/rotate-secret')
+  @RequirePermission(Permission.ADMIN_ROLES)
+  rotateClientSecret(@Param('platform') platform: string, @Body() b: { actor: string }) {
+    return this.admin.rotateClientSecret(platform, b.actor);
+  }
+
   @Put('clients/:platform/rate-limit')
   @RequirePermission(Permission.ADMIN_FEATURE_FLAGS)
   setClientRateLimit(@Param('platform') platform: string, @Body() b: { rateLimitPerMin: number; actor: string }) {

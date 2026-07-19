@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { hashPassword } from '@trustee/cryptography';
+import { hashPassword, sha256Hex } from '@trustee/cryptography';
 import {
   ALL_PERMISSIONS,
   evaluateAbac,
@@ -349,6 +349,32 @@ export class AdminService {
       afterState: { requireSignature, hasKey: Boolean(publicKeyPem) },
     });
     return client;
+  }
+
+  /**
+   * Rotate a client's shared secret (X-Client-Secret). Generates a new strong
+   * secret, stores only its hash, and returns the plaintext ONCE so an operator
+   * can hand it to the partner. The previous secret stops working immediately —
+   * coordinate the cutover with the partner. Every rotation is audited.
+   */
+  async rotateClientSecret(platform: string, actor: string) {
+    const clientSecret = `sk_${randomBytes(24).toString('base64url')}`;
+    const client = await this.prisma.clientApplication.update({
+      where: { platform },
+      data: { clientSecretHash: sha256Hex(clientSecret) },
+      select: { platform: true, oauthClientId: true },
+    });
+    await this.audit.record({
+      actor, action: 'admin.client.secret_rotated',
+      subjectType: 'CLIENT_APPLICATION', subjectId: platform,
+    });
+    return {
+      platform: client.platform,
+      clientId: client.oauthClientId,
+      clientSecret, // shown once; never stored or logged in plaintext
+      rotatedAt: this.clock.nowIso(),
+      note: 'Store this secret now — it is shown only once. The previous secret is now invalid.',
+    };
   }
 }
 

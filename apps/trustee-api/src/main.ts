@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { timingSafeEqual } from 'node:crypto';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -12,6 +13,12 @@ import { RedemptionModule } from './modules/redemption/redemption.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { AttestationModule } from './modules/attestation/attestation.module';
 import { PaykhModule } from './modules/paykh/paykh.module';
+
+interface DocsRes {
+  status(code: number): void;
+  send(body: string): void;
+  set(field: string, value: string): void;
+}
 
 /** Keep only paths whose route starts with one of the allowed prefixes. */
 function filterPaths<T extends { paths: Record<string, unknown> }>(doc: T, prefixes: string[]): T {
@@ -47,6 +54,36 @@ async function bootstrap(): Promise<void> {
   });
 
   app.enableShutdownHooks(); // graceful shutdown (Railway reliability §25)
+
+  // Access-control the human-facing surfaces of the API host (Developer Hub,
+  // Swagger UIs, OpenAPI JSON, status/marketing) with HTTP Basic auth. The data
+  // API keeps its own client-credential auth and is NOT gated here; /health and
+  // the public-key JWKS stay open for probes and signature verification.
+  const docsUser = process.env.DOCS_ACCESS_USER ?? '';
+  const docsPass = process.env.DOCS_ACCESS_PASSWORD ?? '';
+  const docsPaths = [/^\/$/, /^\/developers\/?$/, /^\/status\/?$/, /^\/docs(\/|$)/, /^\/api\/v1\/openapi/];
+  const safeEqual = (a: string, b: string): boolean => {
+    const ab = Buffer.from(a);
+    const bb = Buffer.from(b);
+    return ab.length === bb.length && timingSafeEqual(ab, bb);
+  };
+  app.use((req: { path: string; headers: Record<string, unknown> }, res: DocsRes, next: () => void) => {
+    if (!docsPaths.some((re) => re.test(req.path))) return next();
+    // Fail closed: if no docs credential is configured, the hub is not public.
+    if (!docsPass) {
+      res.status(503);
+      res.send('Developer Hub access is not configured. Set DOCS_ACCESS_USER/DOCS_ACCESS_PASSWORD.');
+      return;
+    }
+    const header = String(req.headers['authorization'] ?? '');
+    if (header.startsWith('Basic ')) {
+      const [u, p] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(':');
+      if (safeEqual(u ?? '', docsUser) && safeEqual(p ?? '', docsPass)) return next();
+    }
+    res.set('WWW-Authenticate', 'Basic realm="Trustee Developer Hub", charset="UTF-8"');
+    res.status(401);
+    res.send('Authentication required to view the Trustee Developer Hub.');
+  });
 
   const auth = (b: ReturnType<typeof baseDoc>) =>
     b
