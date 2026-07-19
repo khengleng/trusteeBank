@@ -4,6 +4,7 @@ import { PrismaService } from '../../infra/prisma.service';
 import { ClockService } from '../../infra/clock.service';
 import { AuditService } from '../../infra/audit.service';
 import { SigningService } from '../../infra/signing.service';
+import { ReserveService } from '../reserve/reserve.service';
 
 export interface CreateAttestation {
   programId?: string;
@@ -32,18 +33,33 @@ export class AttestationService {
     private readonly clock: ClockService,
     private readonly audit: AuditService,
     private readonly signing: SigningService,
+    private readonly reserve: ReserveService,
   ) {}
 
   async create(input: CreateAttestation) {
+    // Derive reserve/liability amounts from the live ledger position when a
+    // program is given and the caller did not supply them, so an attestation
+    // reflects the trustee's books rather than free-text input (§23).
+    let reserveAmountMinor = input.reserveAmountMinor ? BigInt(input.reserveAmountMinor) : null;
+    let liabilityAmountMinor = input.liabilityAmountMinor ? BigInt(input.liabilityAmountMinor) : null;
+    let currency = input.currency ?? null;
+    let derivedFromLedger = false;
+    if (input.programId && (reserveAmountMinor === null || liabilityAmountMinor === null)) {
+      const pos = await this.reserve.position(input.programId);
+      reserveAmountMinor = reserveAmountMinor ?? pos.eligibleReserve.minor;
+      liabilityAmountMinor = liabilityAmountMinor ?? pos.reserveObligation.minor;
+      currency = currency ?? pos.currency;
+      derivedFromLedger = true;
+    }
     const a = await this.prisma.attestation.create({
       data: {
         programId: input.programId ?? null,
         period: input.period,
         scope: input.scope,
         methodology: input.methodology ?? null,
-        reserveAmountMinor: input.reserveAmountMinor ? BigInt(input.reserveAmountMinor) : null,
-        liabilityAmountMinor: input.liabilityAmountMinor ? BigInt(input.liabilityAmountMinor) : null,
-        currency: input.currency ?? null,
+        reserveAmountMinor,
+        liabilityAmountMinor,
+        currency,
         opinion: input.opinion ?? null,
         auditor: input.auditor,
         documentHash: input.documentHash ?? null,
@@ -51,8 +67,14 @@ export class AttestationService {
         createdBy: input.actor,
       },
     });
-    await this.audit.record({ actor: input.actor, action: 'attestation.created', subjectType: 'ATTESTATION', subjectId: a.id });
-    return { id: a.id, status: a.status };
+    await this.audit.record({
+      actor: input.actor,
+      action: 'attestation.created',
+      subjectType: 'ATTESTATION',
+      subjectId: a.id,
+      afterState: { derivedFromLedger },
+    });
+    return { id: a.id, status: a.status, derivedFromLedger };
   }
 
   async transition(id: string, to: 'UNDER_REVIEW' | 'APPROVED' | 'PUBLISHED' | 'WITHDRAWN', actor: string) {

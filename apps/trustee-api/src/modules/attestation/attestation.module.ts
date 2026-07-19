@@ -5,8 +5,10 @@ import {
   PaykhAttestationController,
   TrusteeAttestationController,
 } from './attestation.controller';
+import { ReserveModule } from '../reserve/reserve.module';
 
 @Module({
+  imports: [ReserveModule],
   controllers: [
     PaychainAttestationController,
     PaykhAttestationController,

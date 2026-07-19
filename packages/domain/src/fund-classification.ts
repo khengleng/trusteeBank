@@ -23,6 +23,9 @@ export interface FundBackingPolicy {
 const POLICIES: Record<FundClassification, FundBackingPolicy> = {
   NON_MONETARY_PROMOTIONAL_POINT: policy('NON_MONETARY_PROMOTIONAL_POINT', false, 0, false, false, false),
   CLOSED_LOOP_LOYALTY_VALUE: policy('CLOSED_LOOP_LOYALTY_VALUE', false, 0, true, false, false),
+  // Fiat-backed loyalty stablecoin: 100% reserved, redeemable and transferable,
+  // and trustee-authorized at issuance (it moves real safeguarded funds).
+  BACKED_LOYALTY_STABLECOIN: policy('BACKED_LOYALTY_STABLECOIN', true, 10000, true, true, true),
   MERCHANT_FUNDED_REWARD: policy('MERCHANT_FUNDED_REWARD', true, 10000, true, false, true),
   PLATFORM_FUNDED_REWARD: policy('PLATFORM_FUNDED_REWARD', true, 10000, true, false, true),
   CASHBACK_LIABILITY: policy('CASHBACK_LIABILITY', true, 10000, true, false, true),

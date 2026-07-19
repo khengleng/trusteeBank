@@ -72,3 +72,48 @@ export class CreateSettlementDto {
 export class ApproveSettlementDto {
   @IsString() @IsNotEmpty() checkerId!: string;
 }
+
+export class BindLoyaltyDto {
+  @IsString() @IsNotEmpty() programFundId!: string;
+  @IsOptional() @IsInt() decimals?: number;
+  @IsOptional() @IsNumberString() denominationMinor?: string;
+  @IsOptional() @IsString() stellarAssetCode?: string;
+  @IsOptional() @IsString() stellarIssuer?: string;
+  @IsOptional() @IsString() stellarDistributor?: string;
+  @IsString() @IsNotEmpty() actor!: string;
+}
+
+export class IssueLoyaltyDto {
+  @IsString() @IsNotEmpty() customerRef!: string;
+  @IsOptional() @IsNumberString() amountMinor?: string;
+  @IsOptional() @IsNumberString() units?: string;
+  @IsString() @IsNotEmpty() actor!: string;
+}
+
+export class RedeemLoyaltyDto {
+  @IsString() @IsNotEmpty() merchantId!: string;
+  @IsString() @IsNotEmpty() customerRef!: string;
+  @IsOptional() @IsNumberString() amountMinor?: string;
+  @IsOptional() @IsNumberString() units?: string;
+  @IsString() @IsNotEmpty() actor!: string;
+}
+
+export class RegisterMerchantDto {
+  @IsString() @IsNotEmpty() tenantId!: string;
+  @IsString() @IsNotEmpty() merchantCode!: string;
+  @IsString() @IsNotEmpty() legalName!: string;
+  @IsOptional() @IsString() country?: string;
+  @IsOptional() @IsString() paykhMerchantRef?: string;
+  // KYC/status as determined by PayKH (the onboarding system of record).
+  @IsOptional() @IsString() kycStatus?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() riskLevel?: string;
+  @IsString() @IsNotEmpty() actor!: string;
+}
+
+export class UpdateMerchantStatusDto {
+  @IsOptional() @IsString() kycStatus?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() riskLevel?: string;
+  @IsString() @IsNotEmpty() actor!: string;
+}

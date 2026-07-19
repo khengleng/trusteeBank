@@ -419,6 +419,29 @@ model LiabilitySnapshot {
 }
 
 // ---------------------------------------------------------------------------
+// Reserve adjustments (update §16) — amounts that reduce the ELIGIBLE reserve
+// without moving bank cash: regulatory holds, restricted funds, operational
+// carve-outs, bank charges due. Active adjustments are deducted in the live
+// reserve position, replacing the previously hardcoded zero deductions.
+// ---------------------------------------------------------------------------
+
+model ReserveAdjustment {
+  id          String   @id @default(cuid())
+  programId   String
+  currency    String
+  kind        String   // RESTRICTED | REGULATORY_HOLD | OPERATIONAL | BANK_CHARGE
+  amountMinor BigInt
+  active      Boolean  @default(true)
+  reason      String?
+  createdBy   String
+  liftedBy    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([programId, active])
+}
+
+// ---------------------------------------------------------------------------
 // Reserve snapshots / proof of reserve (§22)
 // ---------------------------------------------------------------------------
 
@@ -805,8 +828,99 @@ model PaykhProgramFund {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  loyaltyLiability PaykhLoyaltyLiability?
+
   @@unique([tenantId, paykhProgramId])
   @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// PayKH: backed loyalty stablecoin (update §23)
+// A merchant's loyalty point that is actually a fiat-backed stablecoin issued
+// on-chain (Stellar). The outstanding liability mirrors the on-chain circulating
+// supply and is backed 1:1 by the safeguarded program fund. Issuance earmarks
+// program-fund backing; redemption (the "swap") turns it into a merchant payable.
+// ---------------------------------------------------------------------------
+
+model PaykhLoyaltyLiability {
+  id               String   @id @default(cuid())
+  tenantId         String
+  paykhProgramId   String
+  programFundId    String   @unique
+  programFund      PaykhProgramFund @relation(fields: [programFundId], references: [id])
+  classification   String   // FundClassification (must require fiat backing)
+  currency         String
+  // Currency peg & denomination (§24). pegCurrency is the fiat held in reserve
+  // (== currency); denominationMinor is the peg-currency minor units backing one
+  // whole token unit (1 for a pure 1:1 stablecoin, or a face value for vouchers).
+  pegCurrency      String
+  denominationMinor BigInt  @default(1)
+  // Minor-unit decimal places used to convert to/from the on-chain amount.
+  decimals         Int      @default(2)
+  // On-chain (Stellar) binding for this asset. Issuance is EXECUTED BY PAYCHAIN;
+  // the trustee stores the asset code/issuer only to read supply for verification.
+  stellarAssetCode String?
+  stellarIssuer    String?  // G... issuing account (PayChain-controlled)
+  stellarDistributor String? // G... distribution account
+  // Running position (authoritative = ledger; on-chain figure reconciled in).
+  outstandingMinor   BigInt @default(0)
+  issuedTotalMinor   BigInt @default(0)
+  redeemedTotalMinor BigInt @default(0)
+  onChainSupplyMinor BigInt @default(0)
+  reconciliationStatus String @default("PENDING") // OK | DRIFT | PENDING
+  lastReconciledAt DateTime?
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  issuances   PaykhLoyaltyIssuance[]
+  redemptions PaykhLoyaltyRedemption[]
+
+  @@unique([tenantId, paykhProgramId])
+  @@index([tenantId])
+}
+
+model PaykhLoyaltyIssuance {
+  id                 String   @id @default(cuid())
+  loyaltyLiabilityId String
+  loyaltyLiability   PaykhLoyaltyLiability @relation(fields: [loyaltyLiabilityId], references: [id])
+  customerRef        String   // opaque PayKH customer identifier
+  units              BigInt?  // token units issued when denominated (§24)
+  amountMinor        BigInt
+  currency           String
+  status             String   @default("ISSUED") // ISSUED | ONCHAIN_CONFIRMED | ONCHAIN_FAILED
+  // PayChain executes the on-chain mint and returns these references (§23).
+  paychainReference  String?
+  onChainTxHash      String?
+  actor              String
+  createdAt          DateTime @default(now())
+
+  @@index([loyaltyLiabilityId])
+}
+
+model PaykhLoyaltyRedemption {
+  id                 String   @id @default(cuid())
+  loyaltyLiabilityId String
+  loyaltyLiability   PaykhLoyaltyLiability @relation(fields: [loyaltyLiabilityId], references: [id])
+  tenantId           String
+  merchantId         String
+  customerRef        String
+  amountMinor        BigInt
+  currency           String
+  status             String   @default("CONFIRMED") // CONFIRMED | SETTLED | CANCELLED
+  // The settlement that pays the merchant the redeemed backing (nullable until
+  // a settlement is confirmed).
+  settlementId       String?
+  // PayChain executes the on-chain burn/clawback and returns these references (§23).
+  paychainReference  String?
+  onChainTxHash      String?  // Stellar burn / clawback tx of the redeemed amount
+  actor              String
+  createdAt          DateTime @default(now())
+  confirmedAt        DateTime?
+
+  @@index([loyaltyLiabilityId])
+  @@index([tenantId])
+  @@index([status])
 }
 
 // ---------------------------------------------------------------------------
@@ -837,4 +951,33 @@ enum SettlementStatus {
   CONFIRMED
   CANCELLED
   FAILED
+}
+
+// ---------------------------------------------------------------------------
+// PayKH: merchant registry mirror (update §25)
+// PayKH is the system of record for merchant onboarding and KYC. This is a
+// trustee-side MIRROR of what PayKH registers/reports — the trustee does NOT run
+// merchant KYC. Settlements and loyalty redemptions reference an ACTIVE merchant
+// (referential integrity), and the kyc/status columns reflect PayKH's decision.
+// ---------------------------------------------------------------------------
+
+model PaykhMerchant {
+  id            String   @id @default(cuid())
+  tenantId      String
+  merchantCode  String   // PayKH's merchant reference, unique within a tenant
+  paykhMerchantRef String? // PayKH's internal merchant id, if different
+  legalName     String
+  country       String?
+  // KYC and lifecycle status AS REPORTED BY PAYKH (authoritative there).
+  kycStatus     String   @default("PENDING")  // PENDING | VERIFIED | REJECTED
+  status        String   @default("ACTIVE")    // ACTIVE | SUSPENDED | CLOSED
+  riskLevel     String   @default("LOW")
+  source        String   @default("PAYKH")
+  lastReportedAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([tenantId, merchantCode])
+  @@index([tenantId])
+  @@index([status])
 }

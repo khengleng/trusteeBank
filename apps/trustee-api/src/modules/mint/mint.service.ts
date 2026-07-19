@@ -22,11 +22,17 @@ import { FeatureFlagsService } from '../../infra/feature-flags.service';
 import { EventsService, PlatformEvent } from '../../events/events.service';
 import { ReserveService } from '../reserve/reserve.service';
 import { ReserveLedgerService } from '../reserve/reserve-ledger.service';
+import { BankBalanceService } from '../../infra/bank-balance.service';
 
 /** Staleness tolerances (§17). Overridable via env; safe defaults. */
 const MAX_RESERVE_SNAPSHOT_AGE_S = Number(process.env.MAX_RESERVE_SNAPSHOT_AGE_S ?? 900);
 const MAX_BANK_CONNECTIVITY_AGE_S = Number(process.env.MAX_BANK_CONNECTIVITY_AGE_S ?? 300);
 const MAX_LIABILITY_FEED_AGE_S = Number(process.env.MAX_LIABILITY_FEED_AGE_S ?? 900);
+// Proof-of-reserve staleness tolerance. Null-max means "no persisted PoR
+// required"; set MAX_PROOF_OF_RESERVE_AGE_S to enforce a maximum age (§22/§17).
+const MAX_PROOF_OF_RESERVE_AGE_S = process.env.MAX_PROOF_OF_RESERVE_AGE_S
+  ? Number(process.env.MAX_PROOF_OF_RESERVE_AGE_S)
+  : null;
 const MINT_AUTH_TTL_S = Number(process.env.MINT_AUTH_TTL_S ?? 900);
 
 export interface RequestMintAuthorization {
@@ -57,6 +63,7 @@ export class MintService {
     private readonly events: EventsService,
     private readonly reserve: ReserveService,
     private readonly ledger: ReserveLedgerService,
+    private readonly bank: BankBalanceService,
   ) {}
 
   /** Maker step: create a pending mint authorization request. */
@@ -451,6 +458,36 @@ export class MintService {
     });
     const complianceHoldActive = holds.length > 0;
 
+    // Live guard signals (§17), replacing prior hardcoded constants:
+    // 1. Age of the latest persisted proof-of-reserve snapshot.
+    const latestSnapshot = await this.prisma.reserveSnapshot.findFirst({
+      where: { programId: auth.programId },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    const proofOfReserveAgeSeconds = latestSnapshot
+      ? this.clock.ageSeconds(latestSnapshot.createdAt)
+      : null;
+    // 2. Unresolved reconciliation: the latest run raised exceptions.
+    const latestRecon = await this.prisma.reconciliationRun.findFirst({
+      where: { programId: auth.programId },
+      orderBy: { createdAt: 'desc' },
+      select: { status: true },
+    });
+    const hasUnresolvedReconciliation = latestRecon?.status === 'EXCEPTIONS';
+    // 3. Any reserve account for this program is restricted / on hold.
+    const restrictedAccount = await this.prisma.trusteeAccount.findFirst({
+      where: { programId: auth.programId, status: { in: ['RESTRICTED', 'ON_HOLD'] } },
+      select: { id: true },
+    });
+    const accountRestricted = restrictedAccount !== null;
+    // 4. Asset-level minting suspension via a PlatformControl.
+    const assetSuspend = await this.prisma.platformControl.findFirst({
+      where: { key: { in: [`asset.suspend.${auth.assetId}`, 'mint.global-suspend'] }, value: true },
+      select: { key: true },
+    });
+    const assetMintingSuspended = assetSuspend !== null;
+
     return {
       requested: money(auth.amountMinor, auth.currency),
       // `pos.mintCapacity` is the live available capacity: eligible reserve minus
@@ -470,19 +507,19 @@ export class MintService {
       // A persisted proof-of-reserve is a separate, optional guard.
       reserveSnapshotAgeSeconds: 0,
       maxReserveSnapshotAgeSeconds: MAX_RESERVE_SNAPSHOT_AGE_S,
-      bankConnectivityAgeSeconds: 0, // demo: manual control; treated as fresh
+      bankConnectivityAgeSeconds: this.bank.lastCheckAgeSeconds() ?? 0,
       maxBankConnectivityAgeSeconds: MAX_BANK_CONNECTIVITY_AGE_S,
       liabilityFeedAgeSeconds: latestLiability
         ? this.clock.ageSeconds(latestLiability.snapshotTimestamp)
         : Number.MAX_SAFE_INTEGER,
       maxLiabilityFeedAgeSeconds: MAX_LIABILITY_FEED_AGE_S,
-      proofOfReserveAgeSeconds: null,
-      maxProofOfReserveAgeSeconds: null,
-      hasUnresolvedReconciliation: false,
+      proofOfReserveAgeSeconds,
+      maxProofOfReserveAgeSeconds: MAX_PROOF_OF_RESERVE_AGE_S,
+      hasUnresolvedReconciliation,
       complianceHoldActive,
-      assetMintingSuspended: false,
+      assetMintingSuspended,
       programSuspended: program.status === 'SUSPENDED',
-      accountRestricted: false,
+      accountRestricted,
       fundingDepositsCleared,
       makerCheckerComplete,
       mintFeatureEnabled,

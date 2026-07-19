@@ -4,17 +4,24 @@ import { PaymentProfilesService } from './payment-profiles.service';
 import { PaymentOrdersService } from './payment-orders.service';
 import { ProgramFundsService } from './program-funds.service';
 import { SettlementsService } from './settlements.service';
+import { LoyaltyService } from './loyalty.service';
+import { MerchantsService } from './merchants.service';
 import { IdempotencyService } from '../../infra/idempotency.service';
 import {
   ActorDto,
   ApproveSettlementDto,
+  BindLoyaltyDto,
   CheckPaymentDto,
   CreatePaymentOrderDto,
   CreateProgramFundDto,
   CreateSettlementDto,
   FundAmountDto,
+  IssueLoyaltyDto,
+  RedeemLoyaltyDto,
+  RegisterMerchantDto,
   SubmitPaymentProfileDto,
   SuspendDto,
+  UpdateMerchantStatusDto,
 } from './paykh.dto';
 
 /**
@@ -30,8 +37,35 @@ export class PaykhController {
     private readonly orders: PaymentOrdersService,
     private readonly funds: ProgramFundsService,
     private readonly settlements: SettlementsService,
+    private readonly loyalty: LoyaltyService,
+    private readonly merchants: MerchantsService,
     private readonly idempotency: IdempotencyService,
   ) {}
+
+  // --- Merchant registry mirror (PayKH is the KYC system of record, §25) ---
+  @Post('merchants')
+  @ApiOperation({ summary: 'PayKH registers/updates a merchant it has onboarded (§25)' })
+  registerMerchant(@Body() dto: RegisterMerchantDto) {
+    return this.merchants.register(dto);
+  }
+
+  @Get('merchants/:id')
+  @ApiOperation({ summary: 'Get a merchant (trustee mirror of PayKH record)' })
+  getMerchant(@Param('id') id: string) {
+    return this.merchants.get(id);
+  }
+
+  @Get('tenants/:tenantId/merchants')
+  @ApiOperation({ summary: 'List a tenant merchants' })
+  listMerchants(@Param('tenantId') tenantId: string) {
+    return this.merchants.listByTenant(tenantId);
+  }
+
+  @Post('merchants/:id/status')
+  @ApiOperation({ summary: 'PayKH updates a merchant KYC/lifecycle status (§25)' })
+  updateMerchantStatus(@Param('id') id: string, @Body() dto: UpdateMerchantStatusDto) {
+    return this.merchants.updateStatus(id, dto);
+  }
 
   // --- Tenant payment profiles ---
   @Post('tenants/:tenantId/payment-profiles')
@@ -191,5 +225,58 @@ export class PaykhController {
   @ApiOperation({ summary: 'Confirm bank-side settlement' })
   confirmSettlement(@Param('id') id: string, @Body() dto: ActorDto) {
     return this.settlements.confirm(id, dto.actor);
+  }
+
+  // --- Backed loyalty stablecoin (§23) ---
+  @Post('loyalty')
+  @ApiOperation({ summary: 'Bind a program fund to a backed loyalty stablecoin (§23)' })
+  bindLoyalty(@Body() dto: BindLoyaltyDto) {
+    return this.loyalty.bind(dto);
+  }
+
+  @Get('loyalty/:id')
+  @ApiOperation({ summary: 'Get a loyalty stablecoin liability' })
+  getLoyalty(@Param('id') id: string) {
+    return this.loyalty.get(id);
+  }
+
+  @Post('loyalty/:id/issue')
+  @ApiOperation({ summary: 'Issue backed loyalty stablecoin to a customer (mints on-chain, §23)' })
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  async issueLoyalty(
+    @Param('id') id: string,
+    @Body() dto: IssueLoyaltyDto,
+    @Headers('idempotency-key') key?: string,
+  ) {
+    const r = await this.idempotency.run(
+      key,
+      `POST /paykh/loyalty/${id}/issue`,
+      dto,
+      () => this.loyalty.issue({ liabilityId: id, ...dto }),
+    );
+    return r.value;
+  }
+
+  @Post('loyalty/:id/redeem')
+  @ApiOperation({ summary: 'Redeem loyalty stablecoin at a merchant — the swap (burns on-chain, §23)' })
+  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  async redeemLoyalty(
+    @Param('id') id: string,
+    @Body() dto: RedeemLoyaltyDto,
+    @Headers('idempotency-key') key?: string,
+  ) {
+    const r = await this.idempotency.run(
+      key,
+      `POST /paykh/loyalty/${id}/redeem`,
+      dto,
+      () => this.loyalty.redeem({ liabilityId: id, ...dto }),
+    );
+    return r.value;
+  }
+
+  @Post('loyalty/:id/reconcile')
+  @ApiOperation({ summary: 'Reconcile ledger vs on-chain supply — proof of reserve (§23)' })
+  reconcileLoyalty(@Param('id') id: string) {
+    return this.loyalty.reconcile(id);
   }
 }

@@ -6,6 +6,7 @@ import { ClockService } from '../../infra/clock.service';
 import { AuditService } from '../../infra/audit.service';
 import { EventsService, PaykhEvent } from '../../events/events.service';
 import { ReserveLedgerService } from '../reserve/reserve-ledger.service';
+import { MerchantsService } from './merchants.service';
 
 export interface CreateSettlement {
   tenantId: string;
@@ -28,9 +29,12 @@ export class SettlementsService {
     private readonly audit: AuditService,
     private readonly events: EventsService,
     private readonly ledger: ReserveLedgerService,
+    private readonly merchants: MerchantsService,
   ) {}
 
   async create(input: CreateSettlement) {
+    // Referential integrity: settle only to an onboarded, ACTIVE merchant (§25).
+    await this.merchants.requireActive(input.merchantId);
     const settlement = await this.prisma.paykhSettlement.create({
       data: {
         tenantId: input.tenantId,
