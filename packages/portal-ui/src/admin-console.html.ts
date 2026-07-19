@@ -206,7 +206,7 @@ async function startMfaSetup(){
 }
 async function enableMfa(){
   const code=document.getElementById('mfaCode').value.trim();document.getElementById('mfaErr').textContent='';
-  try{await api('/api/v1/auth/mfa/enable',{method:'POST',body:JSON.stringify({code})});S.mfaEnabled=true;alert('2FA activated. It will be required at your next login.');vSecurity();}
+  try{await api('/api/v1/auth/mfa/enable',{method:'POST',body:JSON.stringify({code})});alert('2FA activated. Please sign in again with your authenticator code.');logout();}
   catch(e){document.getElementById('mfaErr').textContent=e.message||'Could not activate 2FA'}
 }
 

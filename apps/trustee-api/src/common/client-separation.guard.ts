@@ -44,6 +44,14 @@ export class ClientSeparationGuard implements CanActivate {
       if (required !== 'TRUSTEE_BANK' || user.institution !== 'TRUSTEE_BANK') {
         throw new ForbiddenException('User session not permitted for this namespace');
       }
+      // Enrollment-scoped sessions (password verified, MFA not yet activated)
+      // may reach only the /api/v1/auth endpoints (exempt above). Operator APIs
+      // are blocked until MFA is enrolled.
+      if (user.mfaPending) {
+        throw new ForbiddenException(
+          'MFA enrollment required — activate two-factor auth via /api/v1/auth/mfa/setup before using operator APIs',
+        );
+      }
       (req as Request & { principal?: unknown }).principal = { type: 'user', ...user };
       return true;
     }

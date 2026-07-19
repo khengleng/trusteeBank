@@ -38,6 +38,19 @@ function baseDoc(title: string): DocumentBuilder {
 
 async function bootstrap(): Promise<void> {
   const config = loadConfig();
+
+  // Fail closed on the repo-default secret salt in production: the seed derives
+  // the super-admin password and pilot client secrets from CLIENT_SECRET_SALT,
+  // so the default makes them guessable from the public repo. Refuse to boot
+  // until a real salt is set (then re-seed / rotate credentials).
+  const salt = process.env.CLIENT_SECRET_SALT;
+  if (config.nodeEnv === 'production' && (!salt || salt === 'cambobia-trustee-pilot')) {
+    throw new Error(
+      'CLIENT_SECRET_SALT must be a non-default secret in production (found unset or the repo default). ' +
+        'Set a strong CLIENT_SECRET_SALT, then rotate the super-admin password and client secrets.',
+    );
+  }
+
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
   const logger = new Logger('bootstrap');
 
@@ -61,7 +74,7 @@ async function bootstrap(): Promise<void> {
   // the public-key JWKS stay open for probes and signature verification.
   const docsUser = process.env.DOCS_ACCESS_USER ?? '';
   const docsPass = process.env.DOCS_ACCESS_PASSWORD ?? '';
-  const docsPaths = [/^\/$/, /^\/developers\/?$/, /^\/status\/?$/, /^\/docs(\/|$)/, /^\/api\/v1\/openapi/];
+  const docsPaths = [/^\/$/, /^\/developers\/?$/, /^\/status\/?$/, /^\/docs(\/|$)/, /^\/api\/v1\/openapi/, /^\/\.well-known\//];
   const safeEqual = (a: string, b: string): boolean => {
     const ab = Buffer.from(a);
     const bb = Buffer.from(b);

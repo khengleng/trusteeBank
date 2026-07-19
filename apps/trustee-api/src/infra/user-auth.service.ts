@@ -23,7 +23,13 @@ export interface UserPrincipal {
   email: string;
   institution: string;
   roles: string[];
+  /** True when the operator has authenticated by password but not yet enrolled
+   *  MFA. Such sessions may reach only the /api/v1/auth enrollment endpoints. */
+  mfaPending?: boolean;
 }
+
+/** Operator MFA is enforced unless explicitly disabled (break-glass only). */
+const ENFORCE_OPERATOR_MFA = (process.env.ENFORCE_OPERATOR_MFA ?? 'true') !== 'false';
 
 const SESSION_TTL_SECONDS = Number(process.env.SESSION_TTL_SECONDS ?? 3600);
 
@@ -135,9 +141,14 @@ export class UserAuthService {
         throw new UnauthorizedException('Invalid MFA code');
       }
     }
+    // Password-only sessions for operators without MFA are enrollment-scoped:
+    // the token authenticates but reaches only the /auth enrollment endpoints
+    // until MFA is activated (closes the weak password-only login path).
+    const mfaPending = ENFORCE_OPERATOR_MFA && !user.mfaEnabled;
     return {
       mfaRequired: false,
-      token: this.issueToken({ userId: user.id, email: user.email, institution: user.institution, roles: user.roles }),
+      mfaEnrollmentRequired: mfaPending,
+      token: this.issueToken({ userId: user.id, email: user.email, institution: user.institution, roles: user.roles, mfaPending }),
       user: { userId: user.id, email: user.email, roles: user.roles, institution: user.institution, mfaEnabled: user.mfaEnabled },
     };
   }
@@ -173,6 +184,7 @@ export class UserAuthService {
       email: p.email,
       inst: p.institution,
       roles: p.roles,
+      mfp: p.mfaPending ? 1 : 0,
       exp: Math.floor(this.clock.now().getTime() / 1000) + SESSION_TTL_SECONDS,
     };
     const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -190,10 +202,10 @@ export class UserAuthService {
     }
     try {
       const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as {
-        sub: string; email: string; inst: string; roles: string[]; exp: number;
+        sub: string; email: string; inst: string; roles: string[]; mfp?: number; exp: number;
       };
       if (p.exp * 1000 < this.clock.now().getTime()) return null;
-      return { userId: p.sub, email: p.email, institution: p.inst, roles: p.roles };
+      return { userId: p.sub, email: p.email, institution: p.inst, roles: p.roles, mfaPending: p.mfp === 1 };
     } catch {
       return null;
     }
