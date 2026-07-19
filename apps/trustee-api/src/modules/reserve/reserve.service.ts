@@ -13,6 +13,7 @@ import {
 import { PrismaService } from '../../infra/prisma.service';
 import { SigningService } from '../../infra/signing.service';
 import { ClockService } from '../../infra/clock.service';
+import { BankBalanceService } from '../../infra/bank-balance.service';
 import { EventsService, PlatformEvent } from '../../events/events.service';
 import { ReserveLedgerService } from './reserve-ledger.service';
 
@@ -41,6 +42,7 @@ export class ReserveService {
     private readonly signing: SigningService,
     private readonly clock: ClockService,
     private readonly events: EventsService,
+    private readonly bank: BankBalanceService,
   ) {}
 
   async position(programId: string): Promise<ReservePosition> {
@@ -83,15 +85,25 @@ export class ReserveService {
       ? this.clock.ageSeconds(latestLiability.snapshotTimestamp)
       : null;
 
+    // Active reserve adjustments reduce the ELIGIBLE reserve (§16) without moving
+    // cash: regulatory holds, restricted funds, operational carve-outs, charges.
+    const adjustments = await this.prisma.reserveAdjustment.groupBy({
+      by: ['kind'],
+      where: { programId, currency, active: true },
+      _sum: { amountMinor: true },
+    });
+    const adj = (kind: string): Money =>
+      money(adjustments.find((a) => a.kind === kind)?._sum.amountMinor ?? 0n, currency);
+
     const eligible = eligibleReserve({
       currency,
       clearedBankBalance,
-      restrictedFunds: this.ledger.zero(currency),
+      restrictedFunds: adj('RESTRICTED'),
       unmatchedFunds: unmatched,
       pendingOutgoingPayouts: pendingRedemption,
-      bankChargesDue: this.ledger.zero(currency),
-      regulatoryHolds: this.ledger.zero(currency),
-      operationalFunds: this.ledger.zero(currency),
+      bankChargesDue: adj('BANK_CHARGE'),
+      regulatoryHolds: adj('REGULATORY_HOLD'),
+      operationalFunds: adj('OPERATIONAL'),
       otherIneligibleAmounts: this.ledger.zero(currency),
     });
 
@@ -259,6 +271,101 @@ export class ReserveService {
       currency: pos.currency,
       eligibleReserveMinor: pos.eligibleReserve.minor.toString(),
       mintCapacityMinor: pos.mintCapacity.minor.toString(),
+      asOf: this.clock.nowIso(),
+    };
+  }
+
+  // --- Reserve adjustments (§16) ---
+
+  async addAdjustment(input: {
+    programId: string; kind: string; amountMinor: string; reason?: string; actor: string;
+  }) {
+    const program = await this.program(input.programId);
+    const kinds = ['RESTRICTED', 'REGULATORY_HOLD', 'OPERATIONAL', 'BANK_CHARGE'];
+    if (!kinds.includes(input.kind)) {
+      throw new NotFoundException(`Unknown adjustment kind ${input.kind}`);
+    }
+    const a = await this.prisma.reserveAdjustment.create({
+      data: {
+        programId: input.programId,
+        currency: program.referenceCurrency,
+        kind: input.kind,
+        amountMinor: BigInt(input.amountMinor),
+        reason: input.reason ?? null,
+        createdBy: input.actor,
+      },
+    });
+    return { id: a.id, kind: a.kind, amountMinor: a.amountMinor.toString(), active: a.active };
+  }
+
+  async liftAdjustment(id: string, actor: string) {
+    const a = await this.prisma.reserveAdjustment.update({
+      where: { id },
+      data: { active: false, liftedBy: actor },
+    });
+    return { id: a.id, active: a.active };
+  }
+
+  async listAdjustments(programId: string) {
+    const rows = await this.prisma.reserveAdjustment.findMany({
+      where: { programId, active: true },
+    });
+    return {
+      adjustments: rows.map((a) => ({
+        id: a.id, kind: a.kind, amountMinor: a.amountMinor.toString(), reason: a.reason,
+      })),
+    };
+  }
+
+  /**
+   * Reconcile the internal reserve ledger cash against the bank's reported
+   * cleared balance (§26). Proves the ledger rather than trusting it. Emits a
+   * reconciliation exception event on drift. Skipped (manual mode) when no bank
+   * API is configured.
+   */
+  async reconcileBank(programId: string) {
+    const program = await this.program(programId);
+    const currency = program.referenceCurrency;
+    const account = await this.prisma.trusteeAccount.findFirst({
+      where: { programId },
+      select: { id: true, coreBankingRef: true },
+    });
+    const ledgerCash = await this.ledger.accountBalance(
+      programId,
+      LedgerAccountCode.ASSET_TRUSTEE_BANK_CASH,
+      currency,
+    );
+    const accountRef = account?.coreBankingRef ?? account?.id ?? programId;
+    const bankBalance = await this.bank.clearedBalance(accountRef, currency);
+    if (!bankBalance) {
+      return {
+        programId,
+        mode: 'MANUAL',
+        ledgerCashMinor: ledgerCash.minor.toString(),
+        bankBalanceMinor: null,
+        driftMinor: null,
+        reconciled: null,
+        note: 'BANK_API_URL not configured; ledger is authoritative (no independent bank check).',
+      };
+    }
+    const drift = bankBalance.minor - ledgerCash.minor;
+    const reconciled = drift === 0n;
+    if (!reconciled) {
+      await this.events.publish(PlatformEvent.RECONCILIATION_EXCEPTION_CREATED, {
+        programId,
+        type: 'BANK_LEDGER_DRIFT',
+        ledgerCashMinor: ledgerCash.minor.toString(),
+        bankBalanceMinor: bankBalance.minor.toString(),
+        driftMinor: drift.toString(),
+      });
+    }
+    return {
+      programId,
+      mode: 'LIVE',
+      ledgerCashMinor: ledgerCash.minor.toString(),
+      bankBalanceMinor: bankBalance.minor.toString(),
+      driftMinor: drift.toString(),
+      reconciled,
       asOf: this.clock.nowIso(),
     };
   }

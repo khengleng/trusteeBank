@@ -99,6 +99,105 @@ export interface KHQRProviderAdapter {
   healthCheck(): Promise<IntegrationHealth>;
 }
 
+// --- Stellar on-chain issuance adapter (update §23) -------------------------
+// The backed loyalty stablecoin is issued on the Stellar network. The trustee
+// issues (mints) on customer issuance and burns/claws back on redemption, and
+// independently reads the on-chain circulating supply to reconcile it against
+// the trustee's own loyalty-stablecoin liability. All amounts cross this
+// boundary as minor-unit decimal strings + a `decimals` scale; the adapter does
+// the minor <-> Stellar 7-decimal conversion internally.
+
+export interface StellarAssetRef {
+  assetCode: string;
+  /** G... issuing account. */
+  issuer: string;
+  /** Minor-unit decimal places of the pegged currency (e.g. 2 for USD/KHR). */
+  decimals: number;
+}
+
+export interface StellarSupply {
+  assetCode: string;
+  issuer: string;
+  /** Total issued (circulating) supply in minor units. */
+  circulatingMinor: string;
+  decimals: number;
+  /** Horizon paging cursor / ledger reference for the read. */
+  ledgerReference: string;
+  asOf: string;
+}
+
+export interface StellarTxResult {
+  hash: string;
+  ledger?: number;
+  successful: boolean;
+}
+
+export interface StellarIssueRequest {
+  assetCode: string;
+  /** G... recipient (PayKH custodial distribution account for the customer). */
+  destination: string;
+  amountMinor: string;
+  decimals: number;
+}
+
+export interface StellarBurnRequest {
+  assetCode: string;
+  /** G... holder account the redeemed amount is clawed back from. */
+  from: string;
+  amountMinor: string;
+  decimals: number;
+}
+
+export interface StellarIssuanceAdapter {
+  /** Issue (mint) `amountMinor` of the asset to a destination account. */
+  issue(req: StellarIssueRequest): Promise<StellarTxResult>;
+  /** Burn / claw back `amountMinor` of the asset from a holder (redemption). */
+  burn(req: StellarBurnRequest): Promise<StellarTxResult>;
+  /** Independently read the on-chain circulating supply of the asset. */
+  getSupply(asset: StellarAssetRef): Promise<StellarSupply>;
+  healthCheck(): Promise<IntegrationHealth>;
+}
+
+// --- PayChain issuance gateway (update §23) ---------------------------------
+// On-chain issuance is executed by PayChain (the issuer of record that holds the
+// Stellar keys), NEVER by the trustee. The trustee authorizes an issuance/burn
+// and asks PayChain to execute it via this REST boundary; PayChain performs the
+// on-chain mint/clawback on Stellar and returns the tx reference. The trustee
+// then independently reads Horizon (StellarIssuanceAdapter.getSupply) to verify.
+// If PayChain has not yet built this endpoint, the contract below is the spec it
+// must implement; until then the trustee runs in a flagged simulation mode.
+
+export interface IssuanceExecutionRequest {
+  /** Trustee authorization id backing this on-chain action. */
+  authorizationId: string;
+  operation: 'ISSUE' | 'BURN';
+  assetCode: string;
+  /** Holder / distribution account (G...) to mint to or burn from. */
+  destination: string;
+  amountMinor: string;
+  decimals: number;
+  currency: string;
+  /** Trustee-side idempotency reference (safe to retry). */
+  reference: string;
+  /** The trustee's signed authorization artifact PayChain verifies before minting. */
+  signature?: { keyId: string; alg: string; value: string };
+}
+
+export interface IssuanceExecutionResult {
+  accepted: boolean;
+  /** ACCEPTED | EXECUTED | PENDING | REJECTED */
+  status: string;
+  paychainReference?: string;
+  onChainTxHash?: string;
+  detail?: string;
+}
+
+export interface PayChainIssuanceAdapter {
+  /** Ask PayChain to execute an on-chain issuance/burn on Stellar. */
+  execute(req: IssuanceExecutionRequest): Promise<IssuanceExecutionResult>;
+  healthCheck(): Promise<IntegrationHealth>;
+}
+
 // --- Compliance provider adapter (§25 base spec) ----------------------------
 
 export interface ScreeningResult {

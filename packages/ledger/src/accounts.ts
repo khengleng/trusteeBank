@@ -35,6 +35,11 @@ export const LedgerAccountCode = {
   LIABILITY_PAYKH_GIFT_CARD_FLOAT: 'LIABILITY:PAYKH_GIFT_CARD_FLOAT',
   LIABILITY_PAYKH_CUSTOMER_SAFEGUARDING: 'LIABILITY:PAYKH_CUSTOMER_SAFEGUARDING',
   LIABILITY_PAYKH_PROGRAM_FUND: 'LIABILITY:PAYKH_PROGRAM_FUND',
+  // Outstanding backed loyalty stablecoin held by customers (update §23). This
+  // mirrors the on-chain (Stellar) circulating supply of the merchant's asset:
+  // issuance moves value from the safeguarded program fund into this liability,
+  // redemption moves it out to the merchant payable.
+  LIABILITY_PAYKH_LOYALTY_STABLECOIN: 'LIABILITY:PAYKH_LOYALTY_STABLECOIN',
   // Trustee income/expense/suspense (§14)
   INCOME_TRUSTEE_FEE: 'INCOME:TRUSTEE_FEE',
   EXPENSE_BANK_CHARGE: 'EXPENSE:BANK_CHARGE',

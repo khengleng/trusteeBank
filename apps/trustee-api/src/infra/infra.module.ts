@@ -10,6 +10,8 @@ import { NotificationService } from './notification.service';
 import { UserAuthService } from './user-auth.service';
 import { RedisService } from './redis.service';
 import { RateLimitService } from './rate-limit.service';
+import { IssuanceGatewayService } from './issuance-gateway.service';
+import { BankBalanceService } from './bank-balance.service';
 
 /**
  * Cross-cutting infrastructure shared by every feature module: database,
@@ -30,6 +32,8 @@ import { RateLimitService } from './rate-limit.service';
     UserAuthService,
     RedisService,
     RateLimitService,
+    IssuanceGatewayService,
+    BankBalanceService,
   ],
   exports: [
     PrismaService,
@@ -43,6 +47,8 @@ import { RateLimitService } from './rate-limit.service';
     UserAuthService,
     RedisService,
     RateLimitService,
+    IssuanceGatewayService,
+    BankBalanceService,
   ],
 })
 export class InfraModule {}

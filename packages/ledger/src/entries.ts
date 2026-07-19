@@ -174,3 +174,49 @@ export function paykhProgramFundingEntry(
     references,
   });
 }
+
+/**
+ * Backed loyalty stablecoin issued to a customer (update §23). The value is
+ * moved out of the safeguarded program fund and into the outstanding loyalty
+ * stablecoin liability — bank cash (the reserve asset) is unchanged, so the
+ * point stays fully backed 1:1. This liability mirrors the on-chain (Stellar)
+ * circulating supply of the merchant asset. Requires the program fund to hold
+ * at least `amount` of cleared, un-earmarked backing (enforced by the caller).
+ */
+export function paykhLoyaltyIssuanceEntry(
+  amount: Money,
+  references: JournalReferences,
+): JournalEntry {
+  return buildJournalEntry({
+    currency: amount.currency,
+    description: 'PayKH backed loyalty stablecoin issued (program fund earmarked)',
+    postings: [
+      debit(LedgerAccountCode.LIABILITY_PAYKH_PROGRAM_FUND, amount),
+      credit(LedgerAccountCode.LIABILITY_PAYKH_LOYALTY_STABLECOIN, amount),
+    ],
+    references,
+  });
+}
+
+/**
+ * Loyalty stablecoin redeemed at a merchant — the "swap" (update §23). The
+ * customer's point is extinguished and, in the same entry, the merchant becomes
+ * owed the backing value. The resulting merchant payable is later discharged
+ * against bank cash by {@link paykhMerchantSettlementEntry}, so the reserve that
+ * backed the point flows to the merchant. Mirrors an on-chain (Stellar) burn /
+ * clawback of the redeemed amount.
+ */
+export function paykhLoyaltyRedemptionEntry(
+  amount: Money,
+  references: JournalReferences,
+): JournalEntry {
+  return buildJournalEntry({
+    currency: amount.currency,
+    description: 'PayKH loyalty stablecoin redeemed to merchant payable',
+    postings: [
+      debit(LedgerAccountCode.LIABILITY_PAYKH_LOYALTY_STABLECOIN, amount),
+      credit(LedgerAccountCode.LIABILITY_PAYKH_MERCHANT_PAYABLE, amount),
+    ],
+    references,
+  });
+}

@@ -29,8 +29,13 @@ import {
 export class SigningService {
   private readonly logger = new Logger(SigningService.name);
   private readonly keys = new Map<SigningPurpose, SigningKey>();
+  // Superseded keys kept for a rotation overlap window: signing always uses the
+  // active key above, but verification and the published JWKS also honor these
+  // so in-flight artifacts signed by the previous key still verify (§38).
+  private readonly previousKeys = new Map<SigningPurpose, SigningKey[]>();
 
   constructor() {
+    this.loadPrevious();
     const fromEnv = process.env.TRUSTEE_SIGNING_KEYS;
     if (fromEnv) {
       try {
@@ -70,6 +75,40 @@ export class SigningService {
     );
   }
 
+  /**
+   * Load superseded keys from `TRUSTEE_SIGNING_KEYS_PREVIOUS` (same shape as
+   * TRUSTEE_SIGNING_KEYS, raw or base64 JSON). During a rotation both the new
+   * (active) and previous keys are trusted for verification and published in the
+   * JWKS, so clients that have not yet refreshed keep verifying (§38).
+   */
+  private loadPrevious(): void {
+    const raw = process.env.TRUSTEE_SIGNING_KEYS_PREVIOUS;
+    if (!raw) return;
+    try {
+      const json = raw.trimStart().startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8');
+      const parsed = JSON.parse(json) as Record<
+        string,
+        { keyId: string; privateKeyPem: string; publicKeyPem: string; createdAt?: string }
+      >;
+      for (const purpose of Object.values(SigningPurpose)) {
+        const k = parsed[purpose];
+        if (!k) continue;
+        const list = this.previousKeys.get(purpose) ?? [];
+        list.push({
+          keyId: k.keyId,
+          purpose,
+          privateKeyPem: k.privateKeyPem,
+          publicKeyPem: k.publicKeyPem,
+          createdAt: k.createdAt ?? '1970-01-01T00:00:00.000Z',
+        });
+        this.previousKeys.set(purpose, list);
+      }
+      this.logger.log('Loaded superseded signing keys for rotation overlap (TRUSTEE_SIGNING_KEYS_PREVIOUS).');
+    } catch (err) {
+      throw new Error(`Failed to load TRUSTEE_SIGNING_KEYS_PREVIOUS: ${(err as Error).message}`);
+    }
+  }
+
   private key(purpose: SigningPurpose): SigningKey {
     const k = this.keys.get(purpose);
     if (!k) throw new Error(`No signing key for purpose ${purpose}`);
@@ -81,7 +120,14 @@ export class SigningService {
   }
 
   verify(purpose: SigningPurpose, payload: unknown, signature: Signature): boolean {
-    return verifyPayload(this.key(purpose).publicKeyPem, payload, signature);
+    // Try the active key first, then any superseded keys within the overlap
+    // window, matching on keyId so a specific rotated key can still verify.
+    const candidates = [this.key(purpose), ...(this.previousKeys.get(purpose) ?? [])];
+    return candidates.some(
+      (k) =>
+        (signature.keyId === k.keyId || !signature.keyId) &&
+        verifyPayload(k.publicKeyPem, payload, signature),
+    );
   }
 
   publicKey(purpose: SigningPurpose): { keyId: string; publicKeyPem: string } {
@@ -89,11 +135,19 @@ export class SigningService {
     return { keyId: k.keyId, publicKeyPem: k.publicKeyPem };
   }
 
-  allPublicKeys(): Array<{ purpose: SigningPurpose; keyId: string; publicKeyPem: string }> {
-    return Array.from(this.keys.values()).map((k) => ({
+  allPublicKeys(): Array<{ purpose: SigningPurpose; keyId: string; publicKeyPem: string; status?: string }> {
+    const active = Array.from(this.keys.values()).map((k) => ({
       purpose: k.purpose,
       keyId: k.keyId,
       publicKeyPem: k.publicKeyPem,
+      status: 'active',
     }));
+    const previous: Array<{ purpose: SigningPurpose; keyId: string; publicKeyPem: string; status?: string }> = [];
+    for (const list of this.previousKeys.values()) {
+      for (const k of list) {
+        previous.push({ purpose: k.purpose, keyId: k.keyId, publicKeyPem: k.publicKeyPem, status: 'superseded' });
+      }
+    }
+    return [...active, ...previous];
   }
 }

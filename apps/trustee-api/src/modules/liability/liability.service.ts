@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { verifyPayload, type Signature } from '@trustee/cryptography';
 import { PrismaService } from '../../infra/prisma.service';
+import { FeatureFlagsService } from '../../infra/feature-flags.service';
 
 export interface LiabilitySnapshotInput {
   programId: string;
@@ -39,7 +40,10 @@ export interface LiabilitySnapshotInput {
 export class LiabilityService {
   private readonly logger = new Logger(LiabilityService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly flags: FeatureFlagsService,
+  ) {}
 
   private paychainPublicKey(): string | null {
     return process.env.PAYCHAIN_LIABILITY_PUBLIC_KEY ?? null;
@@ -69,9 +73,17 @@ export class LiabilityService {
         throw new BadRequestException('Liability snapshot signature failed verification');
       }
     } else {
-      // Demo mode: no registered PayChain key. Accept but flag clearly.
+      // Fail closed when signature enforcement is on: an unsigned/unverifiable
+      // supply feed must not silently back reserve/mint decisions (§15).
+      const required = await this.flags.isEnabled('liability.signature.required');
+      if (required) {
+        throw new BadRequestException(
+          'Liability snapshot must be signed and PAYCHAIN_LIABILITY_PUBLIC_KEY configured (liability.signature.required is enabled).',
+        );
+      }
+      // Demo mode only: no registered PayChain key and enforcement disabled.
       this.logger.warn(
-        'PAYCHAIN_LIABILITY_PUBLIC_KEY not configured — accepting snapshot in demo trust mode. Configure the key for production (§15).',
+        'PAYCHAIN_LIABILITY_PUBLIC_KEY not configured — accepting snapshot in demo trust mode. Enable liability.signature.required and configure the key for production (§15).',
       );
       verified = true;
     }

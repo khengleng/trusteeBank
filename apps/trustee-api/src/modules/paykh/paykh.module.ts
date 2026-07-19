@@ -4,6 +4,8 @@ import { PaymentProfilesService } from './payment-profiles.service';
 import { PaymentOrdersService } from './payment-orders.service';
 import { ProgramFundsService } from './program-funds.service';
 import { SettlementsService } from './settlements.service';
+import { LoyaltyService } from './loyalty.service';
+import { MerchantsService } from './merchants.service';
 import { ReserveModule } from '../reserve/reserve.module';
 
 @Module({
@@ -14,7 +16,15 @@ import { ReserveModule } from '../reserve/reserve.module';
     PaymentOrdersService,
     ProgramFundsService,
     SettlementsService,
+    LoyaltyService,
+    MerchantsService,
   ],
-  exports: [PaymentOrdersService, ProgramFundsService, SettlementsService],
+  exports: [
+    PaymentOrdersService,
+    ProgramFundsService,
+    SettlementsService,
+    LoyaltyService,
+    MerchantsService,
+  ],
 })
 export class PaykhModule {}

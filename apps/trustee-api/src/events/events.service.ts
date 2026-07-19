@@ -47,6 +47,11 @@ export const PaykhEvent = {
   SETTLEMENT_CONFIRMED: 'paykh.settlement.confirmed',
   RECONCILIATION_EXCEPTION: 'paykh.reconciliation.exception',
   TENANT_SUSPENDED: 'paykh.tenant.suspended',
+  // Backed loyalty stablecoin lifecycle (update §23).
+  LOYALTY_ISSUED: 'paykh.loyalty.issued',
+  LOYALTY_REDEEMED: 'paykh.loyalty.redeemed',
+  LOYALTY_RECONCILED: 'paykh.loyalty.reconciled',
+  LOYALTY_RESERVE_DRIFT: 'paykh.loyalty.reserve-drift',
 } as const;
 export type PaykhEvent = (typeof PaykhEvent)[keyof typeof PaykhEvent];
 

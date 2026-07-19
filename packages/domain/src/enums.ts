@@ -112,6 +112,10 @@ export type DataClassification =
 export const FundClassification = {
   NON_MONETARY_PROMOTIONAL_POINT: 'NON_MONETARY_PROMOTIONAL_POINT',
   CLOSED_LOOP_LOYALTY_VALUE: 'CLOSED_LOOP_LOYALTY_VALUE',
+  // A loyalty point that is actually a fiat-backed stablecoin (pegged to USD/KHR),
+  // issued on-chain (Stellar) and redeemable/transferable — fully reserved 1:1.
+  // Distinct from CLOSED_LOOP_LOYALTY_VALUE, which is unbacked closed-loop value.
+  BACKED_LOYALTY_STABLECOIN: 'BACKED_LOYALTY_STABLECOIN',
   MERCHANT_FUNDED_REWARD: 'MERCHANT_FUNDED_REWARD',
   PLATFORM_FUNDED_REWARD: 'PLATFORM_FUNDED_REWARD',
   CASHBACK_LIABILITY: 'CASHBACK_LIABILITY',
