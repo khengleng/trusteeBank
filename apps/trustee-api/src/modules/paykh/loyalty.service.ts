@@ -370,6 +370,14 @@ export class LoyaltyService {
     return this.serialize(await this.require(liabilityId));
   }
 
+  /** List all loyalty-stablecoin liabilities (trustee proof-of-reserve view). */
+  async listLiabilities() {
+    const rows = await this.prisma.paykhLoyaltyLiability.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return { liabilities: rows.map((l) => this.serialize(l)) };
+  }
+
   /** Resolve a requested amount from either token `units` or backing minor units. */
   private resolveAmount(liability: Liability, amountMinor?: string, unitsStr?: string) {
     if (unitsStr !== undefined && unitsStr !== null && unitsStr !== '') {

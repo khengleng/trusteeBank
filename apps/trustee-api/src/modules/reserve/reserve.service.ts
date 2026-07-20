@@ -383,6 +383,26 @@ export class ReserveService {
     };
   }
 
+  /** Reserve accounts for a program, with their bank + mock balance (§26). */
+  async listProgramAccounts(programId: string) {
+    const rows = await this.prisma.trusteeAccount.findMany({
+      where: { programId },
+      select: {
+        id: true, maskedAccountNumber: true, accountName: true, bankLegalEntity: true,
+        currency: true, classification: true, status: true, bankId: true,
+        mockClearedMinor: true, coreBankingRef: true,
+      },
+    });
+    return {
+      accounts: rows.map((a) => ({
+        id: a.id, maskedAccountNumber: a.maskedAccountNumber, accountName: a.accountName,
+        bankLegalEntity: a.bankLegalEntity, currency: a.currency, classification: a.classification,
+        status: a.status, bankId: a.bankId, coreBankingRef: a.coreBankingRef,
+        mockClearedMinor: a.mockClearedMinor.toString(),
+      })),
+    };
+  }
+
   // --- Multi-bank registry (§26) ---
 
   async registerBank(input: {

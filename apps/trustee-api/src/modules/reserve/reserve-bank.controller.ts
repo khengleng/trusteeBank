@@ -63,6 +63,12 @@ export class ReserveBankController {
     return this.reserve.reconcileBank(programId);
   }
 
+  @Get('reserves/:programId/accounts')
+  @ApiOperation({ summary: 'List a program reserve accounts with their bank + mock balance (§26)' })
+  listAccounts(@Param('programId') programId: string) {
+    return this.reserve.listProgramAccounts(programId);
+  }
+
   // --- Multi-bank registry (§26) ---
   @Post('bank-connections')
   @ApiOperation({ summary: 'Register/update a bank connection (mock/api/manual, §26)' })

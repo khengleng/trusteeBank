@@ -62,7 +62,7 @@ button.ghost{background:none;border:1px solid var(--line);color:var(--fg);border
 <script>
 const API=(window.__API_BASE__||'');
 const S={token:'',tab:'dashboard',email:'',mfaEnabled:false,userId:'',prog:''};
-const TABS=[['dashboard','Dashboard'],['users','Users (RBAC)'],['roles','Roles'],['policies','ABAC Policies'],['flags','Feature Flags'],['controls','Emergency Controls'],['ops','Operations'],['treasury','Treasury'],['ledger','Ledger'],['recon','Reconciliation'],['audit','Audit'],['compliance','Compliance'],['security','Security (2FA)'],['apimgmt','API & Rate Limits'],['provision','Program Setup'],['webhooks','Webhooks']];
+const TABS=[['dashboard','Dashboard'],['users','Users (RBAC)'],['roles','Roles'],['policies','ABAC Policies'],['flags','Feature Flags'],['controls','Emergency Controls'],['ops','Operations'],['treasury','Treasury'],['ledger','Ledger'],['recon','Reconciliation'],['banking','Banking &amp; Reserve'],['audit','Audit'],['compliance','Compliance'],['security','Security (2FA)'],['apimgmt','API & Rate Limits'],['provision','Program Setup'],['webhooks','Webhooks']];
 function h(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 function val(id){var e=document.getElementById(id);return e?String(e.value).trim():''}
 async function api(path,opts={}){
@@ -92,7 +92,7 @@ function scheduleExpiry(){if(_expTimer){clearTimeout(_expTimer);_expTimer=null}v
 function sessionExpired(){if(_expTimer){clearTimeout(_expTimer);_expTimer=null}sessionStorage.removeItem('tc');S.token='';S.email='';S.userId='';show('login');var e=document.getElementById('loginErr');if(e)e.textContent='Your session has expired. Please sign in again.'}
 function logout(){if(_expTimer){clearTimeout(_expTimer);_expTimer=null}sessionStorage.removeItem('tc');S.token='';S.email='';S.userId='';show('login')}
 function renderNav(){document.getElementById('nav').innerHTML=TABS.map(([k,l])=>'<button class="'+(S.tab===k?'active':'')+'" onclick="go(\\''+k+'\\')">'+l+'</button>').join('')}
-function go(t){S.tab=t;renderNav();({dashboard:vDash,users:vUsers,roles:vRoles,policies:vPolicies,flags:vFlags,controls:vControls,security:vSecurity,apimgmt:vApiMgmt,provision:vProvision,ops:vOps,treasury:vTreasury,ledger:vLedger,recon:vRecon,audit:vAudit,compliance:vCompliance,webhooks:vWebhooks}[t])()}
+function go(t){S.tab=t;renderNav();({dashboard:vDash,users:vUsers,roles:vRoles,policies:vPolicies,flags:vFlags,controls:vControls,security:vSecurity,apimgmt:vApiMgmt,provision:vProvision,ops:vOps,treasury:vTreasury,ledger:vLedger,recon:vRecon,banking:vBanking,audit:vAudit,compliance:vCompliance,webhooks:vWebhooks}[t])()}
 const V=document.getElementById('view');const set=x=>V.innerHTML=x;
 function actor(){return S.email||'admin'}
 
@@ -431,6 +431,73 @@ async function vRecon(){
 }
 async function reconReserve(){if(!S.prog){alert('Pick a program in Treasury first');return}try{await api('/api/v1/admin/reconciliations/reserve',{method:'POST',body:JSON.stringify({programId:S.prog,actor:actor()})});vRecon();}catch(e){alert(e.message)}}
 
+// --- Banking & Reserve (trustee-banking: multi-bank, holds, reconciliation, PoR) ---
+async function vBanking(){
+  var picker=await progPicker();
+  set('<h2>Banking &amp; Reserve</h2><p class="muted">Trustee-banking controls: the banks holding the reserve, per-account balances, eligible-reserve holds, and multi-bank reconciliation against the ledger. Blockchain issuance is handled by PayChain; merchant onboarding by PayKH.</p>'+picker+'<div id="bk">Loading…</div>');
+  bkLoad();
+}
+async function bkLoad(){
+  var box=document.getElementById('bk');if(!box)return;
+  try{
+    var banks=await api('/api/v1/bank/bank-connections');
+    var bopts=(banks.banks||[]);
+    var bankRows=bopts.map(function(b){return '<tr><td><code>'+h(b.bankId)+'</code></td><td>'+h(b.bankLegalName)+'</td><td>'+h(b.country||'')+'</td><td>'+h(b.integrationMode)+'</td><td class="muted">'+h(b.baseUrl||(b.integrationMode==='MOCK'?'(operator-set balances)':''))+'</td><td>'+h(b.status)+'</td></tr>';}).join('');
+    var reg='<div class="card"><h3>Bank connections</h3><p class="muted" style="margin-top:0;font-size:12px">Each bank holding reserve. MOCK uses operator-set balances (no real bank); API reads live core-banking via baseUrl + a token named by an env var; MANUAL/STATEMENT are offline.</p>'
+      +'<table><tr><th>Bank ID</th><th>Legal name</th><th>Country</th><th>Mode</th><th>Endpoint</th><th>Status</th></tr>'+(bankRows||'<tr><td colspan="6" class="muted">No banks registered yet.</td></tr>')+'</table>'
+      +'<div class="row" style="margin-top:10px;flex-wrap:wrap"><input id="bk_id" placeholder="Bank ID e.g. WING" style="max-width:150px"><input id="bk_name" placeholder="Legal name" style="max-width:190px"><input id="bk_country" placeholder="KH" style="max-width:70px"><select id="bk_mode"><option>MOCK</option><option>API</option><option>MANUAL</option><option>STATEMENT</option></select><input id="bk_url" placeholder="baseUrl (API only)" style="max-width:200px"><input id="bk_env" placeholder="authTokenEnv (API only)" style="max-width:170px"><button class="btn" data-act="bkRegister">Register / update</button></div>'
+      +'<small class="hint" style="display:block;font-size:11px;margin-top:6px">Real bank: mode API, baseUrl = core-banking URL, authTokenEnv = the env-var name holding its token (set that variable on the service). Leave URL/env blank for MOCK.</small><span class="err" id="bkErr"></span></div>';
+    var accHtml='';
+    if(S.prog){
+      var accs=await api('/api/v1/bank/reserves/'+S.prog+'/accounts');
+      var accRows=(accs.accounts||[]).map(function(a){var sel='<select id="ab_'+a.id+'"><option value="">— unassigned —</option>'+bopts.map(function(b){return '<option value="'+h(b.bankId)+'"'+(a.bankId===b.bankId?' selected':'')+'>'+h(b.bankId)+'</option>';}).join('')+'</select>';
+        return '<tr><td>'+h(a.maskedAccountNumber)+'<div class="muted" style="font-size:11px">'+h(a.accountName)+' · '+h(a.currency)+'</div></td><td>'+h(a.bankLegalEntity)+'</td><td>'+sel+'</td><td><input id="am_'+a.id+'" type="number" value="'+h(a.mockClearedMinor)+'" style="max-width:130px"><div class="muted" style="font-size:11px">mock cleared (minor)</div></td><td><button class="ghost" data-act="bkSaveAcc" data-id="'+a.id+'">Save</button></td></tr>';}).join('');
+      accHtml='<div class="card"><h3>Reserve accounts &amp; bank links</h3><p class="muted" style="margin-top:0;font-size:12px">Link each reserve account to a bank. In MOCK mode set the cleared balance here; in API mode balances are read live.</p><table><tr><th>Account</th><th>Bank entity</th><th>Bank</th><th>Mock cleared balance</th><th></th></tr>'+(accRows||'<tr><td colspan="5" class="muted">No accounts for this program. Add one under Program Setup.</td></tr>')+'</table><span class="err" id="abErr"></span></div>'
+        +'<div class="card"><h3>Eligible-reserve holds &amp; adjustments</h3><p class="muted" style="margin-top:0;font-size:12px">Amounts carved out of the eligible reserve without moving cash — regulatory holds, restricted funds, operational carve-outs, bank charges.</p><div id="adjBox">Loading…</div><div class="row" style="margin-top:10px"><select id="adj_kind"><option>REGULATORY_HOLD</option><option>RESTRICTED</option><option>OPERATIONAL</option><option>BANK_CHARGE</option></select><input id="adj_amt" type="number" placeholder="amount minor" style="max-width:150px"><input id="adj_reason" placeholder="reason" style="max-width:210px"><button class="btn" data-act="adjAdd">Place hold</button><span class="err" id="adjErr"></span></div></div>'
+        +'<div class="card"><h3>Multi-bank reconciliation</h3><p class="muted" style="margin-top:0;font-size:12px">Compare the reserve ledger cash against the sum of bank balances across all accounts for this program.</p><button class="btn" data-act="bkReconcile">Reconcile now</button><div id="recOut" style="margin-top:10px"></div></div>';
+    } else {
+      accHtml='<div class="card"><span class="muted">Select a program above to manage its reserve accounts, holds and reconciliation.</span></div>';
+    }
+    var loy=await api('/api/v1/bank/loyalty-liabilities');
+    var loyRows=(loy.liabilities||[]).map(function(l){return '<tr><td><code>'+h(l.paykhProgramId)+'</code><div class="muted" style="font-size:11px">'+h(l.tenantId)+'</div></td><td>'+h(l.pegCurrency)+'</td><td>'+money2(l.outstandingMinor)+'</td><td>'+money2(l.onChainSupplyMinor)+'</td><td>'+(l.reconciliationStatus==='DRIFT'?'<span class="danger">DRIFT</span>':l.reconciliationStatus==='OK'?'<span class="on">OK</span>':'<span class="muted">'+h(l.reconciliationStatus)+'</span>')+'</td><td><button class="ghost" data-act="loyRecon" data-id="'+l.id+'">Reconcile</button></td></tr>';}).join('');
+    var loyHtml='<div class="card"><h3>Loyalty stablecoin — proof of reserve</h3><p class="muted" style="margin-top:0;font-size:12px">Read-only. Backed loyalty stablecoins are issued via PayKH and executed on-chain by PayChain; the trustee independently verifies outstanding liability vs on-chain supply. Issuing and redeeming are not done here.</p><table><tr><th>Program</th><th>Ccy</th><th>Outstanding</th><th>On-chain</th><th>Status</th><th></th></tr>'+(loyRows||'<tr><td colspan="6" class="muted">No loyalty stablecoins yet.</td></tr>')+'</table></div>';
+    box.innerHTML=reg+accHtml+loyHtml;
+    if(S.prog)adjLoad();
+  }catch(e){box.innerHTML='<div class="danger">'+h(e.message)+'</div>'}
+}
+async function bkRegister(){
+  var el=document.getElementById('bkErr');if(el)el.textContent='';
+  var body={bankId:val('bk_id'),bankLegalName:val('bk_name'),country:val('bk_country')||undefined,integrationMode:document.getElementById('bk_mode').value,baseUrl:val('bk_url')||undefined,authTokenEnv:val('bk_env')||undefined,actor:actor()};
+  try{await api('/api/v1/bank/bank-connections',{method:'POST',body:JSON.stringify(body)});bkLoad();}
+  catch(e){if(el)el.textContent=e.message||'Failed'}
+}
+async function bkSaveAcc(id){
+  var bankId=(document.getElementById('ab_'+id)||{}).value||'';
+  var mock=(document.getElementById('am_'+id)||{}).value||'0';
+  try{await api('/api/v1/bank/reserve-accounts/'+id+'/bank',{method:'POST',body:JSON.stringify({bankId:bankId||undefined,mockClearedMinor:mock})});bkLoad();}
+  catch(e){var el=document.getElementById('abErr');if(el)el.textContent=e.message||'Failed'}
+}
+async function adjLoad(){
+  var box=document.getElementById('adjBox');if(!box||!S.prog)return;
+  try{var r=await api('/api/v1/bank/reserves/'+S.prog+'/adjustments');
+    box.innerHTML=(r.adjustments&&r.adjustments.length)?('<table><tr><th>Kind</th><th>Amount</th><th>Reason</th><th></th></tr>'+r.adjustments.map(function(a){return '<tr><td>'+h(a.kind)+'</td><td>'+money2(a.amountMinor)+'</td><td class="muted">'+h(a.reason||'')+'</td><td><button class="ghost" data-act="adjLift" data-id="'+a.id+'">Lift</button></td></tr>';}).join('')+'</table>'):'<span class="muted">No active holds.</span>';
+  }catch(e){box.innerHTML='<span class="danger">'+h(e.message)+'</span>'}
+}
+async function adjAdd(){
+  var el=document.getElementById('adjErr');if(el)el.textContent='';
+  try{await api('/api/v1/bank/reserves/'+S.prog+'/adjustments',{method:'POST',body:JSON.stringify({kind:document.getElementById('adj_kind').value,amountMinor:val('adj_amt'),reason:val('adj_reason')||undefined,actor:actor()})});adjLoad();}
+  catch(e){if(el)el.textContent=e.message||'Failed'}
+}
+async function adjLift(id){try{await api('/api/v1/bank/reserve-adjustments/'+id+'/lift',{method:'POST',body:JSON.stringify({actor:actor()})});adjLoad();}catch(e){alert(e.message)}}
+async function bkReconcile(){
+  var out=document.getElementById('recOut');if(!out)return;out.textContent='Reconciling…';
+  try{var r=await api('/api/v1/bank/reserves/'+S.prog+'/bank-reconcile',{method:'POST'});
+    var badge=r.reconciled===true?'<span class="on">RECONCILED</span>':r.reconciled===false?'<span class="danger">DRIFT '+money2(r.driftMinor)+'</span>':'<span class="muted">PARTIAL</span>';
+    out.innerHTML='<div class="row">'+badge+'<span class="muted">ledger '+money2(r.ledgerCashMinor)+' vs banks '+money2(r.bankTotalMinor)+' · '+r.accountsCovered+' covered, '+r.accountsUncovered+' manual</span></div><table style="margin-top:6px"><tr><th>Account</th><th>Bank</th><th>Source</th><th>Balance</th></tr>'+(r.banks||[]).map(function(b){return '<tr><td class="muted">'+h(String(b.accountId).slice(0,10))+'</td><td>'+h(b.bankId||'—')+'</td><td>'+h(b.source)+'</td><td>'+(b.balanceMinor==null?'—':money2(b.balanceMinor))+'</td></tr>';}).join('')+'</table>'+(r.note?'<p class="muted" style="font-size:12px">'+h(r.note)+'</p>':'');
+  }catch(e){out.innerHTML='<span class="danger">'+h(e.message)+'</span>'}
+}
+async function loyRecon(id){try{await api('/api/v1/bank/loyalty-liabilities/'+id+'/reconcile',{method:'POST'});bkLoad();}catch(e){alert(e.message)}}
+
 async function vAudit(){
   set('<h2>Audit log</h2><div class="card"><div class="row"><input id="auf" placeholder="filter action (e.g. mint)" style="max-width:220px"><button class="ghost" data-act="auditGo">Search</button><button class="ghost" data-act="csvAudit">Export CSV</button></div></div><div id="al">Loading…</div>');
   auditGo();
@@ -502,7 +569,7 @@ function ihStart(){ihLoad();if(window.__ihTimer)clearInterval(window.__ihTimer);
 document.addEventListener('click',function(ev){
   var el=ev.target.closest&&ev.target.closest('[data-act]');if(!el)return;
   var a=el.getAttribute('data-act'),id=el.getAttribute('data-id');
-  var map={reviewMint:reviewMint,approveMint:approveMint,rejectMint:rejectMint,approveRedemption:approveRedemption,submitPayout:submitPayout,confirmPayout:confirmPayout,matchDeposit:matchDeposit,clearDeposit:clearDeposit,approveSettlement:approveSettlement,confirmSettlement:confirmSettlement,genPor:genPor,csvTb:csvTb,reconReserve:reconReserve,auditGo:auditGo,csvAudit:csvAudit,toggleHold:toggleHold,newAtt:newAtt,attStep:attStep,editRoles:editRoles,createOperator:createOperator,resetUserPw:resetUserPw,toggleUser:toggleUser,replayWh:replayWh,replayDead:replayDead,whLog:whLog};
+  var map={reviewMint:reviewMint,approveMint:approveMint,rejectMint:rejectMint,approveRedemption:approveRedemption,submitPayout:submitPayout,confirmPayout:confirmPayout,matchDeposit:matchDeposit,clearDeposit:clearDeposit,approveSettlement:approveSettlement,confirmSettlement:confirmSettlement,genPor:genPor,csvTb:csvTb,reconReserve:reconReserve,auditGo:auditGo,csvAudit:csvAudit,toggleHold:toggleHold,newAtt:newAtt,attStep:attStep,editRoles:editRoles,createOperator:createOperator,resetUserPw:resetUserPw,toggleUser:toggleUser,replayWh:replayWh,replayDead:replayDead,whLog:whLog,bkRegister:bkRegister,bkSaveAcc:bkSaveAcc,adjAdd:adjAdd,adjLift:adjLift,bkReconcile:bkReconcile,loyRecon:loyRecon};
   if(a==='pickProg'){S.prog=el.value;go(S.tab);return}
   if(a==='whFilter'){whLoad();return}
   if(map[a]){map[a](id);}
