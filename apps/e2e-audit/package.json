@@ -1,0 +1,21 @@
+{
+  "name": "@trustee/e2e-audit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Trustee-owned end-to-end audit harness across PayKH, PayChain and Trustee — independent verification with a regulator evidence pack.",
+  "scripts": {
+    "e2e:audit": "tsx src/run.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^13.3.0",
+    "@trustee/adapters": "*",
+    "@trustee/cryptography": "*",
+    "@trustee/domain": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}
