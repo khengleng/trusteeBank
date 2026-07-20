@@ -68,6 +68,7 @@ function val(id){var e=document.getElementById(id);return e?String(e.value).trim
 async function api(path,opts={}){
   const r=await fetch(API+path,{...opts,headers:{'content-type':'application/json',...(S.token?{'authorization':'Bearer '+S.token}:{}),...(opts.headers||{})}});
   const t=await r.text();let b;try{b=t?JSON.parse(t):{}}catch{b={raw:t}}
+  if(r.status===401&&S.token&&path.indexOf('/auth/login')<0){sessionExpired();throw Object.assign(new Error('Session expired'),{body:b,status:401})}
   if(!r.ok)throw Object.assign(new Error(b.message||('HTTP '+r.status)),{body:b,status:r.status});
   return b;
 }
@@ -81,11 +82,15 @@ async function login(){
     if(r.mfaRequired){document.getElementById('mfaRow').classList.remove('hide');document.getElementById('loginErr').textContent='Enter your MFA code.';return}
     S.token=r.token;S.email=r.user.email;S.mfaEnabled=!!r.user.mfaEnabled;S.userId=r.user.userId;
     sessionStorage.setItem('tc',JSON.stringify({token:S.token,email:S.email,userId:S.userId}));
-    show('app');document.getElementById('who').textContent=S.email+' · '+(r.user.roles||[]).join(', ');renderNav();
+    show('app');document.getElementById('who').textContent=S.email+' · '+(r.user.roles||[]).join(', ');renderNav();scheduleExpiry();
     if(!S.mfaEnabled){go('security')}else{go('dashboard')}
   }catch(e){document.getElementById('loginErr').textContent=e.status===401?'Invalid credentials or MFA code.':(e.message||'Login failed')}
 }
-function logout(){sessionStorage.removeItem('tc');S.token='';S.email='';show('login')}
+var _expTimer=null;
+function tokenExp(tok){try{var p=(tok||'').split('.')[1];if(!p)return 0;var j=JSON.parse(atob(p.replace(/-/g,'+').replace(/_/g,'/')));return typeof j.exp==='number'?j.exp*1000:0}catch(e){return 0}}
+function scheduleExpiry(){if(_expTimer){clearTimeout(_expTimer);_expTimer=null}var exp=tokenExp(S.token);if(!exp)return;var ms=exp-Date.now();if(ms<=0){sessionExpired();return}_expTimer=setTimeout(sessionExpired,ms)}
+function sessionExpired(){if(_expTimer){clearTimeout(_expTimer);_expTimer=null}sessionStorage.removeItem('tc');S.token='';S.email='';S.userId='';show('login');var e=document.getElementById('loginErr');if(e)e.textContent='Your session has expired. Please sign in again.'}
+function logout(){if(_expTimer){clearTimeout(_expTimer);_expTimer=null}sessionStorage.removeItem('tc');S.token='';S.email='';S.userId='';show('login')}
 function renderNav(){document.getElementById('nav').innerHTML=TABS.map(([k,l])=>'<button class="'+(S.tab===k?'active':'')+'" onclick="go(\\''+k+'\\')">'+l+'</button>').join('')}
 function go(t){S.tab=t;renderNav();({dashboard:vDash,users:vUsers,roles:vRoles,policies:vPolicies,flags:vFlags,controls:vControls,security:vSecurity,apimgmt:vApiMgmt,provision:vProvision,ops:vOps,treasury:vTreasury,ledger:vLedger,recon:vRecon,audit:vAudit,compliance:vCompliance,webhooks:vWebhooks}[t])()}
 const V=document.getElementById('view');const set=x=>V.innerHTML=x;
@@ -488,5 +493,5 @@ document.addEventListener('click',function(ev){
   if(map[a]){map[a](id);}
 });
 
-(function init(){if(new URLSearchParams(location.search).get('reset_token')){show('reset');return}const s=sessionStorage.getItem('tc');if(s){try{const o=JSON.parse(s);S.token=o.token;S.email=o.email;S.userId=o.userId;show('app');document.getElementById('who').textContent=S.email;renderNav();go('dashboard');return}catch{}}show('login')})();
+(function init(){if(new URLSearchParams(location.search).get('reset_token')){show('reset');return}const s=sessionStorage.getItem('tc');if(s){try{const o=JSON.parse(s);var exp=o.token?tokenExp(o.token):0;if(!o.token||(exp&&exp<=Date.now())){sessionStorage.removeItem('tc');show('login');return}S.token=o.token;S.email=o.email;S.userId=o.userId;show('app');document.getElementById('who').textContent=S.email;renderNav();scheduleExpiry();go('dashboard');return}catch{}}show('login')})();
 </script></body></html>`;
