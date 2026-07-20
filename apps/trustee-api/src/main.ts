@@ -68,6 +68,18 @@ async function bootstrap(): Promise<void> {
 
   app.enableShutdownHooks(); // graceful shutdown (Railway reliability §25)
 
+  // Baseline security headers on every response (§37). HSTS enforces TLS;
+  // nosniff/frame-options/referrer-policy reduce sniffing, clickjacking and
+  // referrer leakage. (No CSP here — the Swagger/dev-hub HTML needs a tuned
+  // policy; JSON API responses do not require one.)
+  app.use((_req: unknown, res: { set(k: string, v: string): void }, next: () => void) => {
+    res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('X-Frame-Options', 'DENY');
+    res.set('Referrer-Policy', 'no-referrer');
+    next();
+  });
+
   // Access-control the human-facing surfaces of the API host (Developer Hub,
   // Swagger UIs, OpenAPI JSON, status/marketing) with HTTP Basic auth. The data
   // API keeps its own client-credential auth and is NOT gated here; /health and
