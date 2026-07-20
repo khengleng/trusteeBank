@@ -244,32 +244,45 @@ async function toggleClient(platform,to){
 }
 
 // --- Guided program setup (replaces DEMO-PUSD) ---------------------------
-function pf(id,label,ph,val,type){
+function pf(id,label,ph,val,type,hint){
   return '<label style="display:block;margin:8px 0"><span class="muted" style="display:block;font-size:12px">'+label+'</span>'
-    +'<input id="'+id+'" type="'+(type||'text')+'" placeholder="'+(ph||'')+'" value="'+(val==null?'':val)+'" style="width:100%;max-width:340px"></label>';
+    +'<input id="'+id+'" type="'+(type||'text')+'" placeholder="'+(ph||'')+'" value="'+(val==null?'':val)+'" style="width:100%;max-width:340px">'
+    +(hint?'<small class="hint" style="display:block;font-size:11px;line-height:1.35;margin-top:3px;max-width:340px">'+hint+'</small>':'')
+    +'</label>';
 }
 function vProvision(){
   var pid=S.newProgramId||'';
   var grid='style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 18px"';
-  var step1='<div class="card"><h3>1 · Program</h3><div '+grid+'>'
-    +pf('pg_code','Program code','e.g. PUSD-01')+pf('pg_assetId','Asset ID','e.g. PUSD')
-    +pf('pg_ccy','Reference currency','USD')+pf('pg_issuer','Issuer ID','PayChain issuer id')
-    +pf('pg_legalEntity','Legal entity ID','')+pf('pg_trusteeBank','Trustee bank ID','')
-    +pf('pg_legalModel','Legal model','e.g. DECLARATION_OF_TRUST')+pf('pg_regStatus','Regulatory status','e.g. LICENSED')
-    +pf('pg_reservePolicy','Reserve policy','e.g. FULL_RESERVE')+pf('pg_ratio','Required reserve ratio (bps)','10000','','number')
-    +pf('pg_buffer','Safety buffer (bps)','0','0','number')+pf('pg_agreements','Agreement refs (comma-sep)','')
-    +pf('pg_effective','Effective date','','','date')
+  var step1='<div class="card"><h3>1 · Program</h3>'
+    +'<p class="muted" style="margin-top:0;font-size:12px">A “program” ties one issued token to its reserve, legal and regulatory setup. All fields are required except Safety buffer and Agreement refs.</p><div '+grid+'>'
+    +pf('pg_code','Program code','e.g. PUSD-01',null,null,'Your unique code for this program. Any label you choose, e.g. PUSD-01 or KHQR-KHR-01.')
+    +pf('pg_assetId','Asset ID','e.g. PUSD',null,null,'The token / stablecoin symbol PayChain issues for this program, e.g. PUSD or mKHR.')
+    +pf('pg_ccy','Reference currency','USD',null,null,'ISO-4217 fiat the token is pegged to and reserves are held in — USD, KHR, etc.')
+    +pf('pg_issuer','Issuer ID','PayChain issuer id',null,null,'PayChain’s issuer identifier for this asset (get it from PayChain).')
+    +pf('pg_legalEntity','Legal entity ID','',null,null,'Your reference for the legal entity that owns / operates this program.')
+    +pf('pg_trusteeBank','Trustee bank ID','',null,null,'Identifier of the trustee bank entity safeguarding the reserve.')
+    +pf('pg_legalModel','Legal model','e.g. SAFEGUARDED_CUSTOMER_FUNDS',null,null,'Legal basis for safeguarding — e.g. DECLARATION_OF_TRUST, SAFEGUARDED_CUSTOMER_FUNDS, ESCROW.')
+    +pf('pg_regStatus','Regulatory status','e.g. PILOT',null,null,'Regulatory standing — e.g. LICENSED, PILOT, EXEMPT, PENDING.')
+    +pf('pg_reservePolicy','Reserve policy','e.g. FULL_100',null,null,'One of: FULL_100, OVERCOLLATERALIZED, ASSET_BUFFER, INTRADAY_BUFFER, REDEMPTION_LIQUIDITY_BUFFER, REGULATORY_BUFFER. FULL_100 = backed 1:1.')
+    +pf('pg_ratio','Required reserve ratio (bps)','10000','','number','Backing required, in basis points. 10000 = 100% (full reserve); 12000 = 120%.')
+    +pf('pg_buffer','Safety buffer (bps)','0','0','number','Optional extra reserve held above the required ratio, in bps. 0 = none, 500 = +5%.')
+    +pf('pg_agreements','Agreement refs (comma-sep)','',null,null,'Optional. Trust/agreement document references, comma-separated.')
+    +pf('pg_effective','Effective date','','','date','Date this trustee arrangement takes effect. Defaults to today if left blank.')
     +'</div><button class="btn" onclick="createProgramSubmit()">Create program (DRAFT)</button> <span class="err" id="provErr"></span>'
     +(pid?'<p class="on" style="margin-top:8px">✓ Program created: <code>'+h(pid)+'</code> (DRAFT)</p>':'')+'</div>';
   var rest='';
   if(pid){
-    rest='<div class="card"><h3>2 · Trustee bank account</h3><div '+grid+'>'
-      +pf('ac_masked','Masked account number','**** **** 1234')+pf('ac_name','Account name','Reserve Trust Account')
-      +pf('ac_bank','Bank legal entity','e.g. Cambobia Bank Plc')+pf('ac_core','Core banking ref','')
-      +pf('ac_branch','Branch (optional)','')+pf('ac_ccy','Currency','USD')
-      +pf('ac_class','Classification','e.g. TRUST_RESERVE')
-      +'<label style="display:block;margin:8px 0"><span class="muted" style="display:block;font-size:12px">Balance source</span><select id="ac_src" style="width:100%;max-width:340px"><option>MANUAL</option><option>API</option><option>STATEMENT</option></select></label>'
-      +pf('ac_intmode','Integration mode','e.g. MANUAL')
+    rest='<div class="card"><h3>2 · Trustee bank account</h3>'
+      +'<p class="muted" style="margin-top:0;font-size:12px">The reserve bank account backing this program. You can add more than one (reserves may span several banks).</p><div '+grid+'>'
+      +pf('ac_masked','Masked account number','**** **** 1234',null,null,'Bank account number, masked — only the shown digits are stored (never the full number).')
+      +pf('ac_name','Account name','Reserve Trust Account',null,null,'The account name as held at the bank.')
+      +pf('ac_bank','Bank legal entity','e.g. Cambobia Bank Plc',null,null,'Legal name of the bank holding this reserve account.')
+      +pf('ac_core','Core banking ref','',null,null,'The bank’s account/reference id used to look up the balance (for API/statement reconciliation).')
+      +pf('ac_branch','Branch (optional)','',null,null,'Optional. Bank branch name or code.')
+      +pf('ac_ccy','Currency','USD',null,null,'Account currency — should match the program’s reference currency.')
+      +pf('ac_class','Classification','e.g. RESERVE_ACCOUNT',null,null,'Account type — e.g. RESERVE_ACCOUNT, TRUST_ACCOUNT, ESCROW_ACCOUNT, CLIENT_MONEY_ACCOUNT.')
+      +'<label style="display:block;margin:8px 0"><span class="muted" style="display:block;font-size:12px">Balance source</span><select id="ac_src" style="width:100%;max-width:340px"><option>MANUAL</option><option>API</option><option>STATEMENT</option></select><small class="hint" style="display:block;font-size:11px;line-height:1.35;margin-top:3px;max-width:340px">How cleared balances are obtained: MANUAL (operator-entered), API (live core-banking), or STATEMENT (bank file).</small></label>'
+      +pf('ac_intmode','Integration mode','e.g. MANUAL',null,null,'Free label for the integration used, e.g. MANUAL, MOCK, or the bank connector name.')
       +'</div><button class="btn" onclick="addAccountSubmit()">Add account</button> <span class="err" id="acErr"></span><span id="acOk"></span></div>'
       +'<div class="card"><h3>3 · Partner webhook URLs &amp; secrets</h3>'
       +'<div class="row"><span style="width:90px"><b>PayChain</b></span><input id="wh_PAYCHAIN" placeholder="https://api.paychain.cambobia.com/api/v1/trustee/events" style="flex:1"><button class="ghost" onclick="saveWebhook(\\'PAYCHAIN\\')">Save</button><button class="ghost" onclick="rotateSecret(\\'PAYCHAIN\\')">Rotate secret</button></div>'
