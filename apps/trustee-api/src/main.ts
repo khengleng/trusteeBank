@@ -86,7 +86,9 @@ async function bootstrap(): Promise<void> {
   // the public-key JWKS stay open for probes and signature verification.
   const docsUser = process.env.DOCS_ACCESS_USER ?? '';
   const docsPass = process.env.DOCS_ACCESS_PASSWORD ?? '';
-  const docsPaths = [/^\/$/, /^\/developers\/?$/, /^\/status\/?$/, /^\/docs(\/|$)/, /^\/api\/v1\/openapi/, /^\/\.well-known\//];
+  // NOTE: /.well-known/* (JWKS) is intentionally NOT gated — it must stay open so
+  // clients, auditors and regulators can independently verify signed artifacts.
+  const docsPaths = [/^\/$/, /^\/developers\/?$/, /^\/status\/?$/, /^\/docs(\/|$)/, /^\/api\/v1\/openapi/];
   const safeEqual = (a: string, b: string): boolean => {
     const ab = Buffer.from(a);
     const bb = Buffer.from(b);
