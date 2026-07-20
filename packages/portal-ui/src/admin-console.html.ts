@@ -147,13 +147,14 @@ async function vRoles(){
 }
 
 async function vPolicies(){
-  set('<h2>ABAC approval policies (§9)</h2><div id="p">Loading…</div>');
+  set('<h2>ABAC approval policies (§9)</h2><p class="muted">Attribute-based rules that decide how many approvals a transaction needs, and from which roles — or deny it outright. Rules match on transaction type, amount band, currency and risk level; the highest-priority match wins.</p><div id="p">Loading…</div>');
   const p=await api('/api/v1/admin/policies');
   document.getElementById('p').innerHTML='<div class="card"><h3>Evaluate a transaction</h3>'
   +'<div class="row"><select id="etype"><option>MINT_AUTHORIZATION</option><option>PAYOUT</option><option>SETTLEMENT</option><option>RESERVE_ADJUSTMENT</option></select>'
   +'<input id="eamt" placeholder="amount minor units" style="max-width:200px"><input id="ecur" placeholder="USD" style="max-width:100px">'
-  +'<button class="btn" onclick="evalPolicy()">Evaluate</button></div><div id="eres" class="muted" style="margin-top:8px"></div></div>'
-  +'<div class="card"><table><tr><th>Type</th><th>Match</th><th>Effect</th><th>Approvals</th><th>Roles</th><th>Prio</th></tr>'
+  +'<button class="btn" onclick="evalPolicy()">Evaluate</button></div>'
+  +'<small class="hint" style="display:block;font-size:11px;line-height:1.35;margin-top:6px">Dry-run to preview how many approvals a transaction would need — nothing is executed. Amount is in <b>minor units</b> (e.g. cents: 100000 = $1,000.00).</small><div id="eres" class="muted" style="margin-top:8px"></div></div>'
+  +'<div class="card"><p class="muted" style="margin-top:0;font-size:12px">Active rules. <b>Match</b> = the amount/currency/risk band a rule applies to (“any” = always). <b>Effect</b> = REQUIRE approvals or DENY. <b>Prio</b> = priority; higher numbers are evaluated first.</p><table><tr><th>Type</th><th>Match</th><th>Effect</th><th>Approvals</th><th>Roles</th><th>Prio</th></tr>'
   +p.policies.map(x=>'<tr><td>'+h(x.transactionType)+'</td><td class="muted">'+bands(x)+'</td><td>'+(x.effect==='DENY'?'<span class="danger">DENY</span>':'REQUIRE')+'</td><td>'+x.requiredApprovals+'</td><td>'+x.requiredRoles.map(r=>'<span class="tag">'+h(r)+'</span>').join('')+'</td><td>'+x.priority+'</td></tr>').join('')
   +'</table></div>';
 }
@@ -181,10 +182,11 @@ async function toggleFlag(key,to,risky){
 async function vControls(){
   set('<h2>Emergency controls (§30)</h2><div id="c">Loading…</div>');
   const known=['platform.read-only','mint.global-suspend','redemption.global-suspend','payout.global-suspend','paychain.api-suspend','paykh.api-suspend'];
+  const desc={'platform.read-only':'Read-only mode: block ALL state-changing actions platform-wide. The big red switch.','mint.global-suspend':'Halt all new mint authorizations across every program.','redemption.global-suspend':'Halt all new redemptions (token burns / payouts to holders).','payout.global-suspend':'Halt all outgoing fiat payouts (bank disbursements).','paychain.api-suspend':'Cut off PayChain’s API access entirely (kill switch for that client).','paykh.api-suspend':'Cut off PayKH’s API access entirely (kill switch for that client).'};
   const c=await api('/api/v1/admin/controls');
   const map=Object.fromEntries((c.controls||[]).map(x=>[x.key,x]));
-  document.getElementById('c').innerHTML='<div class="card"><p class="muted">Toggling a control requires a reason and is fully audited.</p><table><tr><th>Control</th><th>State</th><th>Reason</th></tr>'
-  +known.map(k=>{const cur=map[k];const on=cur&&cur.value;return '<tr><td><code>'+h(k)+'</code></td><td><div class="switch '+(on?'active':'')+'" onclick="toggleCtl(\\''+k+'\\','+(!on)+')"><div class="knob"></div></div></td><td class="muted">'+h(cur&&cur.reason||'')+'</td></tr>'}).join('')
+  document.getElementById('c').innerHTML='<div class="card"><p class="muted">Break-glass switches to freeze activity during an incident. Toggling one requires a reason and is fully audited. Turn back off once resolved.</p><table><tr><th>Control</th><th>State</th><th>Reason</th></tr>'
+  +known.map(k=>{const cur=map[k];const on=cur&&cur.value;return '<tr><td><code>'+h(k)+'</code><div class="muted" style="font-size:11px;line-height:1.35;margin-top:2px;max-width:360px">'+h(desc[k]||'')+'</div></td><td><div class="switch '+(on?'active':'')+'" onclick="toggleCtl(\\''+k+'\\','+(!on)+')"><div class="knob"></div></div></td><td class="muted">'+h(cur&&cur.reason||'')+'</td></tr>'}).join('')
   +'</table></div>';
 }
 async function toggleCtl(key,to){
@@ -217,7 +219,7 @@ async function enableMfa(){
 }
 
 async function vApiMgmt(){
-  set('<h2>API usage &amp; rate limits</h2><div id="am">Loading…</div>');
+  set('<h2>API usage &amp; rate limits</h2><p class="muted">Per-client API controls for PayChain and PayKH. <b>Signing</b> = whether inbound requests must be signature-verified. <b>Rate limit</b> = max requests per minute before HTTP 429. <b>Usage</b> = requests in the last 24h. <b>Enabled</b> = master on/off for that client’s API access.</p><div id="am">Loading…</div>');
   try{
     const [c,u]=await Promise.all([api('/api/v1/admin/clients'),api('/api/v1/admin/usage')]);
     const usageBy={};(u.usage||[]).forEach(x=>usageBy[x.platform]=x);
@@ -460,7 +462,7 @@ async function newAtt(){const period=prompt('Attestation period (e.g. 2026-Q3):'
 async function attStep(v){const parts=v.split('|');try{await api('/api/v1/bank/attestations/'+parts[0]+'/'+parts[1],{method:'POST',body:JSON.stringify({actor:actor()})});vCompliance();}catch(e){alert(e.message)}}
 
 async function vWebhooks(){
-  set('<h2>Signed-event webhooks</h2><div class="card"><div class="row"><span class="muted">Status</span><select id="whStatus" data-act="whFilter"><option value="">all</option><option value="pending">pending</option><option value="dead">dead-lettered</option><option value="delivered">delivered</option></select><button class="btn" data-act="replayDead">Replay all dead-lettered</button></div><p class="muted" style="margin-top:6px">Events are delivered to each client at their registered webhook URL with retries, then dead-lettered. Replay after a client receiver goes live.</p></div><div id="wh">Loading…</div>');
+  set('<h2>Signed-event webhooks</h2><div class="card"><div class="row"><span class="muted">Status</span><select id="whStatus" data-act="whFilter"><option value="">all</option><option value="pending">pending</option><option value="dead">dead-lettered</option><option value="delivered">delivered</option></select><button class="btn" data-act="replayDead">Replay all dead-lettered</button></div><p class="muted" style="margin-top:6px">Signed events the trustee sends to PayChain / PayKH at their registered webhook URL. <b>PENDING</b> = awaiting delivery/retry, <b>DELIVERED</b> = acknowledged, <b>DEAD</b> = failed after all retries. Use <b>Log</b> to see each delivery attempt, <b>Replay</b> to re-send — e.g. after a client’s receiver comes online.</p></div><div id="wh">Loading…</div>');
   whLoad();
 }
 async function whLoad(){
