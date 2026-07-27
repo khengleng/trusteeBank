@@ -33,7 +33,8 @@ check agrees.
 `POST /api/v1/paychain/proof-of-reserve/{programId}/snapshots` · `POST /api/v1/paychain/liability-snapshots` ·
 `POST /api/v1/paychain/mint-authorizations` (+ `bank/.../review|approve`) · `POST /api/v1/paychain/redemptions` (+ burn/payout) ·
 `GET /api/v1/bank/loyalty-liabilities` (+ `/{id}/reconcile`) · `POST /api/v1/bank/reserves/{programId}/bank-reconcile` ·
-`GET /api/v1/admin/audit` · `POST /api/v1/admin/reconciliations/reserve`.
+`GET /api/v1/admin/audit` · `POST /api/v1/admin/reconciliations/reserve` ·
+`GET /api/v1/paychain/reconciliation-exceptions` (+ `/{id}/resolve`).
 PayKH/PayChain endpoints are consumed per their published contracts.
 
 ---
@@ -52,6 +53,16 @@ PayKH/PayChain endpoints are consumed per their published contracts.
 | CO-8 | Ledger is **double-entry and always in balance** | E2E-01 S5, C-09 |
 | CO-9 | **Idempotency / no double-processing** of payments & mints | C-04 |
 | CO-10 | Reserve **shortfall / drift is detected and blocks** further issuance | C-01, C-05 |
+
+**How drift blocks issuance.** Detection and blocking are one mechanism, not two:
+every detector (reserve reconciliation, bank-vs-ledger, on-chain-vs-ledger) writes
+an open `ReconciliationException`. The mint guard treats *any* open exception on
+the program as `RECONCILIATION_UNRESOLVED` and refuses to authorize (§17, §49
+"when uncertain: stop minting"). Issuance resumes only when an operator resolves
+the exception via `POST /api/v1/paychain/reconciliation-exceptions/{id}/resolve`
+with an actor and a reason — an audited act that closes the exception without
+altering any figure; a genuine mismatch is corrected by a compensating entry
+(§14). C-05 therefore asserts the open exception, not merely the flag.
 | CO-11 | Inter-platform messages are **cryptographically signed** and verified | C-06, C-07 |
 
 Every test below cites the control objective(s) it evidences.
@@ -86,7 +97,7 @@ result **and** captures evidence.
 | S4 | Mint stablecoin `POST /assets/{id}/earn` (PayChain) | HTTP 2xx; mint tx confirmed on testnet | PayChain mint receipt + **Stellar tx hash** | CO-2, CO-4 |
 | S5 | Reserve & ledger posture (Trustee) | `reserveRatioBps ≥ 10000`; **ledger in balance = true**; obligation reflects new mint | `GET reserves/{prog}/current`; ledger trial balance | CO-1, CO-2, CO-8 |
 | S6 | Proof-of-reserve snapshot (Trustee) | Signed `RESERVE_SNAPSHOT`; `reconciliationStatus=OK`; surplus ≥ 0 | Signed snapshot JSON + `signature{keyId,value}` | CO-3 |
-| S7 | **Independent on-chain verification** (Trustee) | Trustee reads testnet Horizon; **on-chain circulating == ledger liability**; loyalty reconcile `status=OK` (no DRIFT) | `POST loyalty-liabilities/{id}/reconcile` result + Horizon read | CO-4, CO-10 |
+| S7 | **Independent on-chain verification** (Trustee) | Trustee reads testnet Horizon; **on-chain circulating == ledger liability**; loyalty reconcile `status=OK` (no DRIFT). An unreadable chain yields `UNVERIFIED`, never `OK` — the on-chain figure is stored only when actually observed | `POST loyalty-liabilities/{id}/reconcile` result + Horizon read | CO-4, CO-10 |
 | S8 | Signature verification (Auditor harness) | Every signed artifact (S6, mint auth, attestation) verifies against the **JWKS**; `keyId` matches purpose | Verification log (per artifact: keyId, alg, PASS) | CO-3, CO-11 |
 | S9 | Attestation (Trustee) | Attestation created with amounts **derived from the ledger**, published + signed | Signed attestation artifact | CO-3 |
 
@@ -101,10 +112,10 @@ result **and** captures evidence.
 | C-02 | **Self-approval blocked (SoD)** | Same operator acts maker then checker on a mint authorization | HTTP 403 (`§9` self-approval) | CO-5 |
 | C-03 | **Unverified merchant blocked** | Settle / redeem to a merchant with KYC ≠ VERIFIED or status ≠ ACTIVE | Rejected: "KYC is …, not VERIFIED" | CO-6 |
 | C-04 | **Idempotent payment & mint** | Re-POST same `bankTransactionId` / same `Idempotency-Key` | Second call returns the first result / 409 duplicate; **no double credit** | CO-9 |
-| C-05 | **Drift detection** | Set on-chain supply ≠ ledger liability (or a bank balance ≠ ledger cash) | Trustee flags `DRIFT` / `reconciled=false`; `reconciliation.exception` emitted | CO-4, CO-10 |
+| C-05 | **Drift detection** | Set on-chain supply ≠ ledger liability (or a bank balance ≠ ledger cash) | Both arms asserted independently: the auditor reads Horizon itself and re-adds the per-bank breakdown itself, then requires the trustee to have reached the **same** verdict — the detector must fire on a mismatch **and stay silent at parity**. A detected drift must leave an **open** `ReconciliationException`, which is what blocks further issuance | CO-4, CO-10 |
 | C-06 | **Unsigned feed rejected** | POST liability snapshot without/with bad signature while `liability.signature.required=on` | HTTP 400, snapshot rejected | CO-11 |
 | C-07 | **Artifact tamper detection** | Alter one byte of a signed reserve snapshot, re-verify against JWKS | Verification FAILS | CO-3, CO-11 |
-| C-08 | **Multi-bank reconciliation** | Reserve split across ≥2 banks | `bank-reconcile` aggregates all accounts; `reconciled=true` at parity, per-bank breakdown | CO-1, CO-8 |
+| C-08 | **Multi-bank reconciliation** | Reserve split across ≥2 banks | `bank-reconcile` aggregates every account **denominated in the program reference currency**; `reconciled=true` at parity, per-bank breakdown. Accounts in another currency are reported out-of-scope and never added to the total; an account whose bank answers in an unexpected currency counts as unverified | CO-1, CO-8 |
 | C-09 | **Ledger balance invariant** | After every posting in the run | Trial balance nets to zero; `ledger_in_balance=true` | CO-8 |
 | C-10 | **Redeem/burn reduces supply + liability** | PayChain burns; customer redeems | On-chain supply ↓ and trustee liability ↓ by the same amount; still fully reserved | CO-2, CO-4 |
 | C-11 | **Full-reserve at all times** | Sample reserve position after each value event | `eligible_reserve ≥ liability` holds at every sample | CO-2 |
@@ -166,13 +177,14 @@ of the systems under test. It reuses trustee libraries: `@trustee/cryptography`
 ```
 apps/e2e-audit/
   src/
-    clients/        paykh.ts · paychain.ts · trustee.ts   (typed API clients)
-    checks/         signatures.ts · reserve.ts · onchain.ts · ledger.ts · audit.ts
-    scenarios/      e2e-01.ts · controls.ts
-    evidence/       recorder.ts (structured record + hashing + manifest)
-    report/         render.ts (HTML + JSON regulator pack)
+    clients/        trustee.ts · platforms.ts (PayChain + PayKH)   (typed API clients)
+    checks/         signatures.ts (JWKS + artifact verify) · onchain.ts (Horizon supply)
+    scenarios.ts    E2E-01 stages + control tests C-01…C-12
+    evidence.ts     structured record + content hashing + manifest
+    report.ts       HTML + JSON regulator pack
+    config.ts       env-only configuration
+    http.ts         client-credential HTTP
     run.ts          orchestrates scenarios → writes evidence/e2e-<runId>/
-  README.md
 ```
 
 Design rules:
@@ -182,9 +194,9 @@ Design rules:
 - **Fail-safe**: a stage failure records the evidence and continues where safe, so the pack shows exactly where the chain broke (as the current PayChain `/earn` 404 would).
 - **Config**: platform base URLs + credentials via env; no secrets in the repo.
 
-**Run:**
+**Run** (from the repo root; the script delegates to the `@trustee/e2e-audit` workspace):
 ```
-npm run e2e:audit            # full suite → evidence/e2e-<runId>/report.html
+npm run e2e:audit            # full suite → apps/e2e-audit/evidence/e2e-<runId>/report.html
 npm run e2e:audit -- --only E2E-01
 npm run e2e:audit -- --controls-only
 ```
@@ -206,12 +218,14 @@ acknowledgement line for PayKH and PayChain engineering leads.
 
 ---
 
-## 9. Current known gaps (as of 2026-07-20, from live inspection)
+## 9. Current known gaps (as of 2026-07-27, from live inspection)
 
 These will make an E2E run report **NOT_READY / FAIL** until closed:
 1. **PayChain**: `POST /assets/{id}/earn` returns 404 — mint produces no supply (liability feed `circulatingMinor=0`). Blocks S4, S7, C-10.
-2. **Trustee prep**: target asset not yet **registered** (`LiabilityRegistryEntry` empty) and no loyalty stablecoin **bound** (no Stellar code/issuer) — blocks S7 independent verification.
+2. **Trustee prep**: target asset not yet **registered** (`LiabilityRegistryEntry` empty) and no loyalty stablecoin **bound** (no Stellar code/issuer) — blocks S7 and the on-chain arm of C-05.
 3. **Signing enforcement**: `PAYCHAIN_LIABILITY_PUBLIC_KEY` not set and `liability.signature.required` off — C-06 cannot pass; feed currently demo-trusted.
+4. **Automation coverage**: C-01/02/03/04/10/11 remain recorded `NOT_READY` — they need a live PayKH/PayChain or a seeded mint/redeem fixture. C-05 is now automated on both arms and no longer in that set.
+5. **Service-level tests**: `apps/trustee-api` has no unit tests; the drift paths (currency scoping, exception persistence, mint-guard blocking) are covered by C-05/C-08 in the harness, not by unit tests.
 
 ## 10. Out of scope
 Performance/load, chaos/DR, penetration testing, and mainnet cutover — separate plans.

@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { Prisma } from '@trustee/database';
 import { SigningPurpose } from '@trustee/cryptography';
 import {
   money,
@@ -301,9 +302,17 @@ export class LoyaltyService {
   }
 
   /**
-   * Proof-of-reserve position for the loyalty asset: ledger-outstanding vs
-   * independently-read on-chain circulating supply vs safeguarded backing.
-   * Persists the reconciled on-chain figure and flags DRIFT on disagreement.
+   * Proof-of-reserve position for the loyalty asset: ledger-outstanding vs the
+   * liability's own running counter vs independently-read on-chain circulating
+   * supply vs safeguarded backing.
+   *
+   * Three figures must agree, and every disagreement is a distinct exception:
+   *  - ledger vs counter  → COUNTER_LEDGER_DRIFT (internal bookkeeping diverged)
+   *  - ledger vs on-chain → ONCHAIN_LEDGER_DRIFT (issued supply ≠ recorded liability)
+   *  - backing vs outstanding → LOYALTY_BACKING_SHORTFALL (not fully backed)
+   *
+   * When the chain cannot be read the status is UNVERIFIED, never OK: an
+   * unreadable Horizon is an absence of evidence, not evidence of parity (§49).
    */
   async reconcile(liabilityId: string) {
     const liability = await this.require(liabilityId);
@@ -319,28 +328,76 @@ export class LoyaltyService {
 
     // Independently read on-chain supply from Horizon (read-only, no keys).
     let onChainSupplyMinor: bigint | null = null;
-    if (liability.stellarAssetCode && liability.stellarIssuer) {
+    const hasOnChainBinding = !!(liability.stellarAssetCode && liability.stellarIssuer);
+    if (hasOnChainBinding) {
       const supply = await this.gateway.readOnChainSupply({
-        assetCode: liability.stellarAssetCode,
-        issuer: liability.stellarIssuer,
+        assetCode: liability.stellarAssetCode!,
+        issuer: liability.stellarIssuer!,
         decimals: liability.decimals,
       });
       if (supply) onChainSupplyMinor = BigInt(supply.circulatingMinor);
     }
 
-    const status =
-      onChainSupplyMinor !== null && onChainSupplyMinor !== ledgerOutstanding.minor
-        ? 'DRIFT'
+    const exceptions: Array<{ type: string; detail: Record<string, unknown> }> = [];
+    if (liability.outstandingMinor !== ledgerOutstanding.minor) {
+      exceptions.push({
+        type: 'COUNTER_LEDGER_DRIFT',
+        detail: {
+          liabilityId: liability.id,
+          counterOutstandingMinor: liability.outstandingMinor.toString(),
+          ledgerOutstandingMinor: ledgerOutstanding.minor.toString(),
+          driftMinor: (liability.outstandingMinor - ledgerOutstanding.minor).toString(),
+        },
+      });
+    }
+    if (onChainSupplyMinor !== null && onChainSupplyMinor !== ledgerOutstanding.minor) {
+      exceptions.push({
+        type: 'ONCHAIN_LEDGER_DRIFT',
+        detail: {
+          liabilityId: liability.id,
+          onChainSupplyMinor: onChainSupplyMinor.toString(),
+          ledgerOutstandingMinor: ledgerOutstanding.minor.toString(),
+          driftMinor: (onChainSupplyMinor - ledgerOutstanding.minor).toString(),
+        },
+      });
+    }
+    if (fund && fund.fundedMinor < ledgerOutstanding.minor) {
+      exceptions.push({
+        type: 'LOYALTY_BACKING_SHORTFALL',
+        detail: {
+          liabilityId: liability.id,
+          safeguardedBackingMinor: fund.fundedMinor.toString(),
+          ledgerOutstandingMinor: ledgerOutstanding.minor.toString(),
+          shortfallMinor: (fund.fundedMinor - ledgerOutstanding.minor).toString(),
+        },
+      });
+    }
+
+    // UNVERIFIED outranks OK but not DRIFT: a proven mismatch is the louder fact.
+    const status = exceptions.length > 0
+      ? 'DRIFT'
+      : hasOnChainBinding && onChainSupplyMinor === null
+        ? 'UNVERIFIED'
         : 'OK';
 
     const updated = await this.prisma.paykhLoyaltyLiability.update({
       where: { id: liability.id },
       data: {
-        onChainSupplyMinor: onChainSupplyMinor ?? ledgerOutstanding.minor,
+        // Only ever store a figure actually read from the chain. Writing the
+        // ledger value here would manufacture the very agreement we are testing.
+        onChainSupplyMinor,
         reconciliationStatus: status,
         lastReconciledAt: this.clock.now(),
       },
     });
+
+    if (exceptions.length > 0) {
+      await this.recordDrift(liability.tenantId, liability.id, exceptions, {
+        ledgerOutstandingMinor: ledgerOutstanding.minor.toString(),
+        onChainSupplyMinor: onChainSupplyMinor?.toString() ?? null,
+        counterOutstandingMinor: liability.outstandingMinor.toString(),
+      });
+    }
 
     await this.events.publishToPaykh(
       status === 'DRIFT' ? PaykhEvent.LOYALTY_RESERVE_DRIFT : PaykhEvent.LOYALTY_RECONCILED,
@@ -348,6 +405,8 @@ export class LoyaltyService {
         liabilityId: liability.id,
         ledgerOutstandingMinor: ledgerOutstanding.minor.toString(),
         onChainSupplyMinor: onChainSupplyMinor?.toString() ?? null,
+        counterOutstandingMinor: liability.outstandingMinor.toString(),
+        exceptions: exceptions.map((e) => e.type),
         status,
       },
     );
@@ -358,12 +417,61 @@ export class LoyaltyService {
       ledgerOutstandingMinor: ledgerOutstanding.minor.toString(),
       counterOutstandingMinor: updated.outstandingMinor.toString(),
       onChainSupplyMinor: onChainSupplyMinor?.toString() ?? null,
+      onChainBound: hasOnChainBinding,
       onChainVerified: onChainSupplyMinor !== null,
       safeguardedBackingMinor: fund ? fund.fundedMinor.toString() : null,
-      fullyBacked: fund ? fund.fundedMinor >= updated.outstandingMinor : null,
+      // Backing is judged against the ledger (authoritative), not the counter.
+      fullyBacked: fund ? fund.fundedMinor >= ledgerOutstanding.minor : null,
+      exceptions: exceptions.map((e) => e.type),
       reconciliationStatus: status,
       asOf: this.clock.nowIso(),
     };
+  }
+
+  /**
+   * Persist loyalty drift as a reconciliation run + open exceptions, so it lands
+   * in the same exception queue as every other mismatch and is visible to an
+   * operator until explicitly resolved (§24).
+   *
+   * Reconciliation is safe to re-run: an exception type already open against this
+   * liability is not raised again, so re-running while a drift persists does not
+   * bury the operator in duplicates.
+   */
+  private async recordDrift(
+    tenantId: string,
+    liabilityId: string,
+    exceptions: Array<{ type: string; detail: Record<string, unknown> }>,
+    summary: Record<string, unknown>,
+  ) {
+    const open = await this.prisma.reconciliationException.findMany({
+      where: {
+        resolved: false,
+        type: { in: exceptions.map((e) => e.type) },
+        run: { scope: 'LOYALTY_SUPPLY', tenantId },
+      },
+      select: { type: true, detail: true },
+    });
+    const alreadyOpen = new Set(
+      open
+        .filter((e) => (e.detail as { liabilityId?: string } | null)?.liabilityId === liabilityId)
+        .map((e) => e.type),
+    );
+    const fresh = exceptions.filter((e) => !alreadyOpen.has(e.type));
+    if (!fresh.length) return;
+
+    await this.prisma.reconciliationRun.create({
+      data: {
+        scope: 'LOYALTY_SUPPLY',
+        tenantId,
+        status: 'EXCEPTIONS',
+        summary: { liabilityId, ...summary } as Prisma.InputJsonValue,
+        createdBy: 'system:loyalty-reconcile',
+        exceptions: {
+          create: fresh.map((e) => ({ type: e.type, detail: e.detail as Prisma.InputJsonValue })),
+        },
+      },
+      select: { id: true },
+    });
   }
 
   async get(liabilityId: string) {
@@ -464,7 +572,9 @@ export class LoyaltyService {
       outstandingMinor: l.outstandingMinor.toString(),
       issuedTotalMinor: l.issuedTotalMinor.toString(),
       redeemedTotalMinor: l.redeemedTotalMinor.toString(),
-      onChainSupplyMinor: l.onChainSupplyMinor.toString(),
+      // null when the chain has not been read — the absence is part of the proof.
+      onChainSupplyMinor: l.onChainSupplyMinor?.toString() ?? null,
+      onChainVerified: l.onChainSupplyMinor !== null,
       reconciliationStatus: l.reconciliationStatus,
       status: l.status,
     };

@@ -11,6 +11,11 @@ class TenantReconDto {
   @IsString() @IsNotEmpty() tenantId!: string;
   @IsString() @IsNotEmpty() actor!: string;
 }
+/** Closing an exception un-blocks minting, so it demands an actor and a reason. */
+class ResolveExceptionDto {
+  @IsString() @IsNotEmpty() actor!: string;
+  @IsString() @IsNotEmpty() reason!: string;
+}
 
 /** PayChain reconciliation (§24). */
 @ApiTags('paychain-reconciliation')
@@ -34,6 +39,12 @@ export class PaychainReconciliationController {
   @ApiOperation({ summary: 'List open reconciliation exceptions' })
   exceptions(@Query('resolved') resolved?: string) {
     return this.recon.listExceptions(resolved === 'true');
+  }
+
+  @Post('reconciliation-exceptions/:id/resolve')
+  @ApiOperation({ summary: 'Resolve an exception (un-blocks minting, §17/§24)' })
+  resolve(@Param('id') id: string, @Body() dto: ResolveExceptionDto) {
+    return this.recon.resolveException(id, dto.actor, dto.reason);
   }
 }
 
@@ -59,5 +70,11 @@ export class PaykhReconciliationController {
   @ApiOperation({ summary: 'List open PayKH reconciliation exceptions' })
   exceptions(@Query('resolved') resolved?: string) {
     return this.recon.listExceptions(resolved === 'true');
+  }
+
+  @Post('reconciliation-exceptions/:id/resolve')
+  @ApiOperation({ summary: 'Resolve a PayKH reconciliation exception (§24)' })
+  resolve(@Param('id') id: string, @Body() dto: ResolveExceptionDto) {
+    return this.recon.resolveException(id, dto.actor, dto.reason);
   }
 }

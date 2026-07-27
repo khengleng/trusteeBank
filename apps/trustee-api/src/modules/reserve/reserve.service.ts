@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@trustee/database';
 import { SigningPurpose, sha256Hex } from '@trustee/cryptography';
 import { money, type Money } from '@trustee/domain';
 import { LedgerAccountCode } from '@trustee/ledger';
@@ -322,8 +323,14 @@ export class ReserveService {
    * balances (§26), aggregated across ALL of a program's accounts — the reserve
    * may be spread over many banks. Each account resolves to its own bank
    * connection (mock / api / manual). Proves the ledger rather than trusting it;
-   * emits a reconciliation exception on drift. Accounts on manual/offline banks
+   * records a reconciliation exception on drift. Accounts on manual/offline banks
    * are reported as uncovered rather than silently assumed correct.
+   *
+   * Money of different currencies is never added (§14): the ledger cash balance
+   * is read per-currency, so only accounts denominated in the program reference
+   * currency take part in the comparison. Accounts in another currency are
+   * reported as out-of-scope, and a bank that reports a balance in an unexpected
+   * currency counts as a mismatch — not as reserve.
    */
   async reconcileBank(programId: string) {
     const program = await this.program(programId);
@@ -340,31 +347,71 @@ export class ReserveService {
 
     let bankTotal = 0n;
     let uncovered = 0;
-    const perBank: Array<{ accountId: string; bankId: string | null; source: string; balanceMinor: string | null }> = [];
+    let mismatched = 0;
+    const perBank: Array<{
+      accountId: string;
+      bankId: string | null;
+      source: string;
+      currency: string;
+      balanceMinor: string | null;
+      inScope: boolean;
+      note?: string;
+    }> = [];
+    const outOfScope = accounts.filter((a) => a.currency !== currency);
     for (const acc of accounts) {
-      const bal = await this.bank.clearedBalanceForAccount(acc);
-      if (bal) {
-        bankTotal += bal.minor;
-        perBank.push({ accountId: acc.id, bankId: bal.bankId, source: bal.source, balanceMinor: bal.minor.toString() });
-      } else {
-        uncovered += 1;
-        perBank.push({ accountId: acc.id, bankId: acc.bankId, source: 'manual', balanceMinor: null });
+      if (acc.currency !== currency) {
+        // A different-currency account is safeguarded under its own currency's
+        // cash ledger; including it here would compare unlike money.
+        perBank.push({
+          accountId: acc.id, bankId: acc.bankId, source: 'out-of-scope', currency: acc.currency,
+          balanceMinor: null, inScope: false,
+          note: `denominated in ${acc.currency}, program reference currency is ${currency}`,
+        });
+        continue;
       }
+      const bal = await this.bank.clearedBalanceForAccount(acc);
+      if (!bal) {
+        uncovered += 1;
+        perBank.push({ accountId: acc.id, bankId: acc.bankId, source: 'manual', currency: acc.currency, balanceMinor: null, inScope: true });
+        continue;
+      }
+      if (bal.currency !== currency) {
+        // The bank answered in a currency we did not ask for — treat as an
+        // unverified account rather than folding a foreign amount into the total.
+        mismatched += 1;
+        uncovered += 1;
+        perBank.push({
+          accountId: acc.id, bankId: bal.bankId, source: bal.source, currency: bal.currency,
+          balanceMinor: bal.minor.toString(), inScope: true,
+          note: `bank reported ${bal.currency}, expected ${currency} — excluded from the total`,
+        });
+        continue;
+      }
+      bankTotal += bal.minor;
+      perBank.push({ accountId: acc.id, bankId: bal.bankId, source: bal.source, currency: bal.currency, balanceMinor: bal.minor.toString(), inScope: true });
     }
 
-    const covered = accounts.length - uncovered;
+    const inScope = accounts.length - outOfScope.length;
+    const covered = inScope - uncovered;
     const drift = bankTotal - ledgerCash.minor;
-    // Only assert reconciliation when every account was independently covered.
+    // Only assert reconciliation when every in-scope account was independently covered.
     const reconciled = uncovered === 0 ? drift === 0n : null;
     if (reconciled === false) {
-      await this.events.publish(PlatformEvent.RECONCILIATION_EXCEPTION_CREATED, {
-        programId,
-        type: 'BANK_LEDGER_DRIFT',
+      // Persist the exception, not just an event — an unresolved exception is what
+      // blocks further issuance (§17 RECONCILIATION_UNRESOLVED / CO-10).
+      await this.recordBankDrift(programId, {
         ledgerCashMinor: ledgerCash.minor.toString(),
         bankTotalMinor: bankTotal.toString(),
         driftMinor: drift.toString(),
+        currency,
+        accountsCovered: covered,
       });
     }
+    const notes = [
+      uncovered > 0 ? `${uncovered} in-scope account(s) not independently verified.` : null,
+      mismatched > 0 ? `${mismatched} account(s) returned a currency other than ${currency}.` : null,
+      outOfScope.length > 0 ? `${outOfScope.length} account(s) out of scope (other currency).` : null,
+    ].filter(Boolean);
     return {
       programId,
       currency,
@@ -372,15 +419,50 @@ export class ReserveService {
       bankTotalMinor: bankTotal.toString(),
       driftMinor: drift.toString(),
       reconciled,
+      accountsInScope: inScope,
       accountsCovered: covered,
       accountsUncovered: uncovered,
+      accountsCurrencyMismatched: mismatched,
+      accountsOutOfScope: outOfScope.length,
       banks: perBank,
-      note:
-        uncovered > 0
-          ? `${uncovered} account(s) on manual/offline banks — not independently verified.`
-          : undefined,
+      note: notes.length ? notes.join(' ') : undefined,
       asOf: this.clock.nowIso(),
     };
+  }
+
+  /**
+   * Record a bank-vs-ledger drift as a reconciliation run + open exception, so it
+   * is visible in the exception queue AND fails the mint guard until an operator
+   * resolves it (§24, §49 "when uncertain: stop minting").
+   *
+   * Reconciliation is safe to re-run, so an unresolved drift is only raised once:
+   * re-running while the same drift persists must not bury the operator in
+   * duplicates. A drift that is resolved and then recurs raises a fresh one.
+   */
+  private async recordBankDrift(programId: string, detail: Record<string, string | number>) {
+    const alreadyOpen = await this.prisma.reconciliationException.findFirst({
+      where: { resolved: false, type: 'BANK_LEDGER_DRIFT', run: { programId } },
+      select: { id: true },
+    });
+    if (alreadyOpen) return;
+
+    const run = await this.prisma.reconciliationRun.create({
+      data: {
+        scope: 'RESERVE_BANK',
+        programId,
+        status: 'EXCEPTIONS',
+        summary: detail as Prisma.InputJsonValue,
+        createdBy: 'system:bank-reconcile',
+        exceptions: { create: [{ type: 'BANK_LEDGER_DRIFT', detail: detail as Prisma.InputJsonValue }] },
+      },
+      select: { id: true },
+    });
+    await this.events.publish(PlatformEvent.RECONCILIATION_EXCEPTION_CREATED, {
+      runId: run.id,
+      programId,
+      type: 'BANK_LEDGER_DRIFT',
+      ...detail,
+    });
   }
 
   /** Reserve accounts for a program, with their bank + mock balance (§26). */
