@@ -168,16 +168,43 @@ export class ReconciliationService {
     exceptions: Array<{ type: string; detail: Record<string, unknown> }>,
     actor: string,
   ) {
+    // Reconciliation is safe to re-run and is run on a schedule, so a persisting
+    // condition must not raise a new exception every cycle: an open exception of
+    // the same type on the same subject IS the outstanding item. Without this a
+    // scheduled run accrues thousands of duplicates, each of which an operator
+    // would have to resolve individually to un-block issuance.
+    const openTypes = exceptions.length
+      ? new Set(
+          (
+            await this.prisma.reconciliationException.findMany({
+              where: {
+                resolved: false,
+                type: { in: exceptions.map((e) => e.type) },
+                run: {
+                  scope,
+                  programId: keys.programId ?? null,
+                  tenantId: keys.tenantId ?? null,
+                },
+              },
+              select: { type: true },
+            })
+          ).map((e) => e.type),
+        )
+      : new Set<string>();
+    const fresh = exceptions.filter((e) => !openTypes.has(e.type));
+
     return this.prisma.reconciliationRun.create({
       data: {
         scope,
         programId: keys.programId ?? null,
         tenantId: keys.tenantId ?? null,
+        // The run still reports EXCEPTIONS while the condition holds, even when
+        // it raised nothing new — the state of the program has not improved.
         status: exceptions.length ? 'EXCEPTIONS' : 'OK',
         summary: summary as Prisma.InputJsonValue,
         createdBy: actor,
         exceptions: {
-          create: exceptions.map((e) => ({ type: e.type, detail: e.detail as Prisma.InputJsonValue })),
+          create: fresh.map((e) => ({ type: e.type, detail: e.detail as Prisma.InputJsonValue })),
         },
       },
       include: { exceptions: true },
