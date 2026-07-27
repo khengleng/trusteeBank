@@ -3,6 +3,7 @@ import type { Recorder, Verdict } from './evidence';
 import { TrusteeClient } from './clients/trustee';
 import { PayChainClient, PayKHClient } from './clients/platforms';
 import { verifyArtifact, jwksByKeyId, type JwksKey } from './checks/signatures';
+import { readOnChainSupplyMinor } from './checks/onchain';
 import { createPublicKey } from 'node:crypto';
 
 export interface Ctx {
@@ -131,8 +132,15 @@ export async function runControls(ctx: Ctx): Promise<void> {
     const r = await trustee.bankReconcile(cfg.programId);
     const j = r.json ?? {};
     const verdict: Verdict = !r.ok ? 'FAIL' : j.reconciled === true ? 'PASS' : j.reconciled === false ? 'FAIL' : 'NOT_READY';
-    rec.record({ testId: 'C-08', title: 'Multi-bank reconciliation', controlObjective: ['CO-1', 'CO-8'], platform: 'trustee', detail: { ledgerCashMinor: j.ledgerCashMinor, bankTotalMinor: j.bankTotalMinor, driftMinor: j.driftMinor, reconciled: j.reconciled, accountsCovered: j.accountsCovered, accountsUncovered: j.accountsUncovered }, independentCheck: { method: 'ledger cash vs summed bank balances', result: verdict }, verdict });
+    rec.record({ testId: 'C-08', title: 'Multi-bank reconciliation', controlObjective: ['CO-1', 'CO-8'], platform: 'trustee', detail: { currency: j.currency, ledgerCashMinor: j.ledgerCashMinor, bankTotalMinor: j.bankTotalMinor, driftMinor: j.driftMinor, reconciled: j.reconciled, accountsInScope: j.accountsInScope, accountsCovered: j.accountsCovered, accountsUncovered: j.accountsUncovered, accountsCurrencyMismatched: j.accountsCurrencyMismatched, accountsOutOfScope: j.accountsOutOfScope }, independentCheck: { method: 'ledger cash vs summed same-currency bank balances', result: verdict }, verdict });
   }
+
+  // C-05 drift detection — both arms, asserted independently (never trusting the
+  // trustee's own verdict): the auditor reads Horizon itself and re-adds the
+  // per-bank breakdown itself, then checks the trustee reached the same
+  // conclusion AND that a detected drift left an OPEN exception (which is what
+  // blocks further issuance, CO-10).
+  await driftDetectionStage(ctx);
 
   // C-09 ledger balance invariant
   if (cfg.programId) {
@@ -152,12 +160,134 @@ export async function runControls(ctx: Ctx): Promise<void> {
     ['C-02', 'Self-approval blocked (SoD §9)', ['CO-5']],
     ['C-03', 'Unverified merchant blocked', ['CO-6']],
     ['C-04', 'Idempotent payment & mint', ['CO-9']],
-    ['C-05', 'On-chain/ledger drift detection', ['CO-4', 'CO-10']],
     ['C-10', 'Burn reduces supply + liability', ['CO-2', 'CO-4']],
     ['C-11', 'Full-reserve at all times', ['CO-2']],
   ] as const) {
     rec.record({ testId: c[0], title: c[1], controlObjective: [...c[2]], platform: 'auditor', detail: { note: 'requires live PayKH/PayChain or a seeded mint/redeem fixture — pending platform readiness' }, verdict: 'NOT_READY' });
   }
+}
+
+/**
+ * C-05 — drift detection, both arms of the control:
+ *
+ *  a) on-chain vs ledger: the auditor reads circulating supply from Horizon
+ *     directly (no keys, no trustee involvement) and compares it against the
+ *     ledger figure the trustee reports. The control PASSES when the trustee's
+ *     own DRIFT flag matches what the auditor independently computed — the
+ *     detector must fire on a mismatch and stay silent at parity.
+ *  b) bank vs ledger: the auditor re-adds the per-account balances from the
+ *     bank-reconcile breakdown and compares to the ledger cash figure, then
+ *     checks the trustee reached the same verdict.
+ *
+ * A detected drift must also leave an OPEN reconciliation exception — detection
+ * that does not block issuance would not satisfy CO-10.
+ */
+async function driftDetectionStage(ctx: Ctx): Promise<void> {
+  const { cfg, rec, trustee } = ctx;
+  const arms: Array<Record<string, unknown>> = [];
+  const verdicts: Verdict[] = [];
+  let driftSeen = false;
+
+  // --- Arm (a): on-chain vs ledger ------------------------------------------
+  const loy = await trustee.loyaltyList();
+  const bound = (loy.json?.liabilities ?? []).filter((l: any) => l.stellar?.assetCode && l.stellar?.issuer);
+  if (!bound.length) {
+    arms.push({ arm: 'on-chain-vs-ledger', result: 'NOT_READY', note: 'no loyalty stablecoin bound to a Stellar asset — nothing to read on chain' });
+    verdicts.push('NOT_READY');
+  }
+  for (const l of bound) {
+    const chain = await readOnChainSupplyMinor(cfg.stellarHorizon, l.stellar.assetCode, l.stellar.issuer, l.decimals ?? 2);
+    const rc = await trustee.loyaltyReconcile(l.id);
+    const ledgerMinor = rc.json?.ledgerOutstandingMinor;
+    if (!chain.ok || ledgerMinor === undefined) {
+      arms.push({ arm: 'on-chain-vs-ledger', liabilityId: l.id, result: 'NOT_READY', note: chain.ok ? `trustee returned no ledger figure (HTTP ${rc.status})` : `Horizon unreadable: ${chain.note}` });
+      verdicts.push('NOT_READY');
+      continue;
+    }
+    // What the auditor found, from its own read.
+    const auditorDrift = BigInt(chain.circulatingMinor!) - BigInt(ledgerMinor);
+    const auditorSaysDrift = auditorDrift !== 0n;
+    // What the trustee concluded, unaided.
+    const trusteeSaysDrift = rc.json?.reconciliationStatus === 'DRIFT';
+    const agrees = auditorSaysDrift === trusteeSaysDrift;
+    if (auditorSaysDrift) driftSeen = true;
+    arms.push({
+      arm: 'on-chain-vs-ledger', liabilityId: l.id,
+      onChainSupplyMinor: chain.circulatingMinor, ledgerOutstandingMinor: ledgerMinor,
+      auditorDriftMinor: auditorDrift.toString(), auditorSaysDrift, trusteeStatus: rc.json?.reconciliationStatus,
+      trusteeSaysDrift, agrees, horizon: chain.note,
+      result: agrees ? 'PASS' : 'FAIL',
+      note: agrees ? undefined : auditorSaysDrift
+        ? 'auditor found a supply/ledger mismatch the trustee did NOT flag — detector failed to fire'
+        : 'trustee flagged DRIFT the auditor could not reproduce',
+    });
+    verdicts.push(agrees ? 'PASS' : 'FAIL');
+  }
+
+  // --- Arm (b): bank vs ledger ----------------------------------------------
+  if (cfg.programId) {
+    const r = await trustee.bankReconcile(cfg.programId);
+    const j = r.json ?? {};
+    if (!r.ok) {
+      arms.push({ arm: 'bank-vs-ledger', result: 'FAIL', note: `bank-reconcile HTTP ${r.status}` });
+      verdicts.push('FAIL');
+    } else {
+      // Re-add the breakdown ourselves rather than trusting bankTotalMinor.
+      const inScope = (j.banks ?? []).filter((b: any) => b.inScope !== false && b.balanceMinor != null && b.currency === j.currency);
+      const auditorTotal = inScope.reduce((s: bigint, b: any) => s + BigInt(b.balanceMinor), 0n);
+      const auditorDrift = auditorTotal - BigInt(j.ledgerCashMinor ?? '0');
+      const unverified = (j.accountsUncovered ?? 0) > 0;
+      const auditorSaysDrift = auditorDrift !== 0n;
+      const trusteeSaysDrift = j.reconciled === false;
+      // With unverified accounts the trustee must abstain (reconciled === null)
+      // rather than assert parity it cannot prove.
+      const agrees = unverified ? j.reconciled === null : auditorSaysDrift === trusteeSaysDrift;
+      if (auditorSaysDrift && !unverified) driftSeen = true;
+      arms.push({
+        arm: 'bank-vs-ledger', programId: cfg.programId, currency: j.currency,
+        ledgerCashMinor: j.ledgerCashMinor, trusteeBankTotalMinor: j.bankTotalMinor,
+        auditorBankTotalMinor: auditorTotal.toString(), auditorDriftMinor: auditorDrift.toString(),
+        accountsCovered: j.accountsCovered, accountsUncovered: j.accountsUncovered,
+        accountsOutOfScope: j.accountsOutOfScope, reconciled: j.reconciled, agrees,
+        result: agrees ? 'PASS' : 'FAIL',
+        note: agrees ? undefined : unverified
+          ? 'accounts were unverified yet the trustee still asserted a reconciliation verdict'
+          : 'auditor re-addition disagrees with the trustee verdict',
+      });
+      verdicts.push(agrees ? 'PASS' : 'FAIL');
+    }
+  }
+
+  // --- Detection must also BLOCK (CO-10): an open exception exists ------------
+  if (driftSeen) {
+    const ex = await trustee.reconciliationExceptions();
+    const open = (ex.json?.exceptions ?? []).filter((e: any) =>
+      ['BANK_LEDGER_DRIFT', 'ONCHAIN_LEDGER_DRIFT', 'COUNTER_LEDGER_DRIFT'].includes(e.type));
+    arms.push({
+      arm: 'drift-blocks-issuance', openDriftExceptions: open.length,
+      types: open.map((e: any) => e.type), result: open.length > 0 ? 'PASS' : 'FAIL',
+      note: open.length > 0
+        ? 'open exception present — mint guard reports RECONCILIATION_UNRESOLVED'
+        : 'drift was detected but left no open exception, so issuance is not blocked',
+    });
+    verdicts.push(open.length > 0 ? 'PASS' : 'FAIL');
+  }
+
+  const verdict: Verdict = verdicts.includes('FAIL')
+    ? 'FAIL'
+    : verdicts.length && verdicts.every((v) => v === 'NOT_READY')
+      ? 'NOT_READY'
+      : verdicts.includes('PASS') ? 'PASS' : 'NOT_READY';
+  rec.record({
+    testId: 'C-05', title: 'Drift detection (on-chain vs ledger, bank vs ledger)',
+    controlObjective: ['CO-4', 'CO-10'], platform: 'auditor',
+    detail: { arms },
+    independentCheck: {
+      method: 'auditor reads Horizon + re-adds bank breakdown, compares to the trustee verdict',
+      result: verdict,
+    },
+    verdict,
+  });
 }
 
 /** Fetch the JWKS, assert keys are present & valid Ed25519, verify a signed

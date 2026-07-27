@@ -67,3 +67,16 @@ GET {STELLAR_HORIZON_URL}/assets?asset_code=mUSD&asset_issuer=G...
 and flags `DRIFT` when the circulating supply disagrees with the trustee's
 loyalty-stablecoin ledger balance. This closes the loop: PayChain executes,
 the trustee proves.
+
+`reconciliationStatus` is one of:
+
+| Status | Meaning |
+|---|---|
+| `OK` | Every figure agreed — chain read, ledger, and the liability's running counter. |
+| `DRIFT` | A proven mismatch: on-chain vs ledger, the counter vs ledger, or backing below outstanding. Raises an open `ReconciliationException`, which blocks further issuance until resolved. |
+| `UNVERIFIED` | The asset is bound on-chain but Horizon could not be read this run. **Not** a pass: an unreadable chain is an absence of evidence, not evidence of parity. |
+| `PENDING` | Never reconciled. |
+
+`onChainSupplyMinor` is `null` unless a figure was actually read from Horizon —
+it is never back-filled from the ledger, since doing so would manufacture the
+very agreement the check exists to test.

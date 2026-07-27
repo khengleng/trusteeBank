@@ -8,7 +8,7 @@ export const ADMIN_CONSOLE_TEMPLATE = `<!doctype html>
 ${FAVICON_LINK}
 <style>
 :root{--bg:#0b1020;--card:#141a2e;--fg:#e8ecf5;--mut:#93a0bd;--acc:#5b8cff;--ok:#35c98b;--warn:#f5b34a;--bad:#ff6b6b;--line:#243050}
-@media(prefers-color-scheme:light){:root{--bg:#f4f6fb;--card:#fff;--fg:#111827;--mut:#5b6579;--acc:#2f5fe0;--ok:#0a8f5b;--line:#e3e8f2}}
+@media(prefers-color-scheme:light){:root{--bg:#f4f6fb;--card:#fff;--fg:#111827;--mut:#5b6579;--acc:#2f5fe0;--ok:#0a8f5b;--warn:#a35c00;--bad:#c0392b;--line:#e3e8f2}}
 *{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}
 header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
 .logo{width:40px;height:40px;display:grid;place-items:center;flex-shrink:0}
@@ -30,7 +30,7 @@ button.ghost{background:none;border:1px solid var(--line);color:var(--fg);border
 .on{color:var(--ok);font-weight:600}.off{color:var(--mut)}
 .switch{cursor:pointer;border:1px solid var(--line);border-radius:999px;width:44px;height:24px;position:relative;background:var(--bg)}
 .switch.active{background:var(--ok)}.knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}.switch.active .knob{left:24px}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.muted{color:var(--mut)}.danger{color:var(--bad)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.muted{color:var(--mut)}.danger{color:var(--bad)}.warn{color:var(--warn);font-weight:600}
 #login{max-width:420px;margin:8vh auto}.err{color:var(--bad);font-size:13px;margin-top:8px;min-height:18px}
 .hide{display:none}small.hint{color:var(--mut)}
 </style></head><body>
@@ -459,7 +459,7 @@ async function bkLoad(){
       accHtml='<div class="card"><span class="muted">Select a program above to manage its reserve accounts, holds and reconciliation.</span></div>';
     }
     var loy=await api('/api/v1/bank/loyalty-liabilities');
-    var loyRows=(loy.liabilities||[]).map(function(l){return '<tr><td><code>'+h(l.paykhProgramId)+'</code><div class="muted" style="font-size:11px">'+h(l.tenantId)+'</div></td><td>'+h(l.pegCurrency)+'</td><td>'+money2(l.outstandingMinor)+'</td><td>'+money2(l.onChainSupplyMinor)+'</td><td>'+(l.reconciliationStatus==='DRIFT'?'<span class="danger">DRIFT</span>':l.reconciliationStatus==='OK'?'<span class="on">OK</span>':'<span class="muted">'+h(l.reconciliationStatus)+'</span>')+'</td><td><button class="ghost" data-act="loyRecon" data-id="'+l.id+'">Reconcile</button></td></tr>';}).join('');
+    var loyRows=(loy.liabilities||[]).map(function(l){return '<tr><td><code>'+h(l.paykhProgramId)+'</code><div class="muted" style="font-size:11px">'+h(l.tenantId)+'</div></td><td>'+h(l.pegCurrency)+'</td><td>'+money2(l.outstandingMinor)+'</td><td>'+(l.onChainSupplyMinor==null?'<span class="muted" title="not read from chain">—</span>':money2(l.onChainSupplyMinor))+'</td><td>'+(l.reconciliationStatus==='DRIFT'?'<span class="danger">DRIFT</span>':l.reconciliationStatus==='OK'?'<span class="on">OK</span>':l.reconciliationStatus==='UNVERIFIED'?'<span class="warn" title="on-chain supply could not be read">UNVERIFIED</span>':'<span class="muted">'+h(l.reconciliationStatus)+'</span>')+'</td><td><button class="ghost" data-act="loyRecon" data-id="'+l.id+'">Reconcile</button></td></tr>';}).join('');
     var loyHtml='<div class="card"><h3>Loyalty stablecoin — proof of reserve</h3><p class="muted" style="margin-top:0;font-size:12px">Read-only. Backed loyalty stablecoins are issued via PayKH and executed on-chain by PayChain; the trustee independently verifies outstanding liability vs on-chain supply. Issuing and redeeming are not done here.</p><table><tr><th>Program</th><th>Ccy</th><th>Outstanding</th><th>On-chain</th><th>Status</th><th></th></tr>'+(loyRows||'<tr><td colspan="6" class="muted">No loyalty stablecoins yet.</td></tr>')+'</table></div>';
     box.innerHTML=reg+accHtml+loyHtml;
     if(S.prog)adjLoad();
@@ -493,7 +493,8 @@ async function bkReconcile(){
   var out=document.getElementById('recOut');if(!out)return;out.textContent='Reconciling…';
   try{var r=await api('/api/v1/bank/reserves/'+S.prog+'/bank-reconcile',{method:'POST'});
     var badge=r.reconciled===true?'<span class="on">RECONCILED</span>':r.reconciled===false?'<span class="danger">DRIFT '+money2(r.driftMinor)+'</span>':'<span class="muted">PARTIAL</span>';
-    out.innerHTML='<div class="row">'+badge+'<span class="muted">ledger '+money2(r.ledgerCashMinor)+' vs banks '+money2(r.bankTotalMinor)+' · '+r.accountsCovered+' covered, '+r.accountsUncovered+' manual</span></div><table style="margin-top:6px"><tr><th>Account</th><th>Bank</th><th>Source</th><th>Balance</th></tr>'+(r.banks||[]).map(function(b){return '<tr><td class="muted">'+h(String(b.accountId).slice(0,10))+'</td><td>'+h(b.bankId||'—')+'</td><td>'+h(b.source)+'</td><td>'+(b.balanceMinor==null?'—':money2(b.balanceMinor))+'</td></tr>';}).join('')+'</table>'+(r.note?'<p class="muted" style="font-size:12px">'+h(r.note)+'</p>':'');
+    var scope=r.accountsCovered+' covered, '+r.accountsUncovered+' unverified'+(r.accountsOutOfScope?', '+r.accountsOutOfScope+' other currency':'');
+    out.innerHTML='<div class="row">'+badge+'<span class="muted">ledger '+money2(r.ledgerCashMinor)+' vs banks '+money2(r.bankTotalMinor)+' ('+h(r.currency)+') · '+scope+'</span></div><table style="margin-top:6px"><tr><th>Account</th><th>Bank</th><th>Source</th><th>Ccy</th><th>Balance</th></tr>'+(r.banks||[]).map(function(b){return '<tr'+(b.inScope===false?' class="muted"':'')+'><td class="muted">'+h(String(b.accountId).slice(0,10))+'</td><td>'+h(b.bankId||'—')+'</td><td>'+h(b.source)+'</td><td>'+h(b.currency||'—')+'</td><td>'+(b.balanceMinor==null?'—':money2(b.balanceMinor))+(b.note?' <span class="muted" style="font-size:11px">'+h(b.note)+'</span>':'')+'</td></tr>';}).join('')+'</table>'+(r.note?'<p class="muted" style="font-size:12px">'+h(r.note)+'</p>':'');
   }catch(e){out.innerHTML='<span class="danger">'+h(e.message)+'</span>'}
 }
 async function loyRecon(id){try{await api('/api/v1/bank/loyalty-liabilities/'+id+'/reconcile',{method:'POST'});bkLoad();}catch(e){alert(e.message)}}

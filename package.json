@@ -22,7 +22,8 @@
     "db:generate": "npm run db:generate -w @trustee/database",
     "db:migrate": "npm run db:migrate -w @trustee/database",
     "db:deploy": "npm run db:deploy -w @trustee/database",
-    "db:seed": "npm run db:seed -w @trustee/database"
+    "db:seed": "npm run db:seed -w @trustee/database",
+    "e2e:audit": "npm run e2e:audit -w @trustee/e2e-audit"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

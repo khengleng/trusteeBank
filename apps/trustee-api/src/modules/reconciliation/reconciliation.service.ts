@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@trustee/database';
 import { PrismaService } from '../../infra/prisma.service';
+import { AuditService } from '../../infra/audit.service';
 import { EventsService, PlatformEvent } from '../../events/events.service';
 import { ReserveService } from '../reserve/reserve.service';
 
@@ -16,6 +17,7 @@ export class ReconciliationService {
     private readonly prisma: PrismaService,
     private readonly reserve: ReserveService,
     private readonly events: EventsService,
+    private readonly audit: AuditService,
   ) {}
 
   /** PayChain reserve reconciliation: eligible reserve vs circulating liability. */
@@ -106,6 +108,59 @@ export class ReconciliationService {
     return { exceptions };
   }
 
+  /**
+   * Close an exception after an operator has investigated it. An OPEN exception
+   * blocks minting (§17 RECONCILIATION_UNRESOLVED), so resolving is a
+   * value-affecting act: it demands an actor and a reason, and is audited.
+   * Resolving never alters the underlying figures — a genuine mismatch is
+   * corrected by a compensating entry, never by editing history (§14/§49).
+   */
+  async resolveException(id: string, actor: string, reason: string) {
+    const existing = await this.prisma.reconciliationException.findUnique({
+      where: { id },
+      include: { run: { select: { scope: true, programId: true, tenantId: true } } },
+    });
+    if (!existing) throw new NotFoundException(`Reconciliation exception ${id} not found`);
+    if (existing.resolved) {
+      throw new BadRequestException(`Reconciliation exception ${id} is already resolved`);
+    }
+
+    const updated = await this.prisma.reconciliationException.update({
+      where: { id },
+      data: { resolved: true },
+    });
+    // The parent run no longer carries open exceptions — reflect that in its status.
+    const stillOpen = await this.prisma.reconciliationException.count({
+      where: { runId: existing.runId, resolved: false },
+    });
+    if (stillOpen === 0) {
+      await this.prisma.reconciliationRun.update({
+        where: { id: existing.runId },
+        data: { status: 'OK' },
+      });
+    }
+
+    await this.audit.record({
+      actor,
+      action: 'reconciliation.exception.resolved',
+      subjectType: 'ReconciliationException',
+      subjectId: id,
+      beforeState: { resolved: false, type: existing.type, detail: existing.detail },
+      afterState: { resolved: true, runId: existing.runId, scope: existing.run.scope },
+      reason,
+    });
+    await this.events.publish(PlatformEvent.RECONCILIATION_EXCEPTION_RESOLVED, {
+      exceptionId: id,
+      runId: existing.runId,
+      programId: existing.run.programId,
+      tenantId: existing.run.tenantId,
+      type: existing.type,
+      resolvedBy: actor,
+      reason,
+    });
+    return { id: updated.id, type: updated.type, resolved: updated.resolved, runId: updated.runId };
+  }
+
   private async record(
     scope: string,
     keys: { programId?: string; tenantId?: string },
@@ -113,16 +168,43 @@ export class ReconciliationService {
     exceptions: Array<{ type: string; detail: Record<string, unknown> }>,
     actor: string,
   ) {
+    // Reconciliation is safe to re-run and is run on a schedule, so a persisting
+    // condition must not raise a new exception every cycle: an open exception of
+    // the same type on the same subject IS the outstanding item. Without this a
+    // scheduled run accrues thousands of duplicates, each of which an operator
+    // would have to resolve individually to un-block issuance.
+    const openTypes = exceptions.length
+      ? new Set(
+          (
+            await this.prisma.reconciliationException.findMany({
+              where: {
+                resolved: false,
+                type: { in: exceptions.map((e) => e.type) },
+                run: {
+                  scope,
+                  programId: keys.programId ?? null,
+                  tenantId: keys.tenantId ?? null,
+                },
+              },
+              select: { type: true },
+            })
+          ).map((e) => e.type),
+        )
+      : new Set<string>();
+    const fresh = exceptions.filter((e) => !openTypes.has(e.type));
+
     return this.prisma.reconciliationRun.create({
       data: {
         scope,
         programId: keys.programId ?? null,
         tenantId: keys.tenantId ?? null,
+        // The run still reports EXCEPTIONS while the condition holds, even when
+        // it raised nothing new — the state of the program has not improved.
         status: exceptions.length ? 'EXCEPTIONS' : 'OK',
         summary: summary as Prisma.InputJsonValue,
         createdBy: actor,
         exceptions: {
-          create: exceptions.map((e) => ({ type: e.type, detail: e.detail as Prisma.InputJsonValue })),
+          create: fresh.map((e) => ({ type: e.type, detail: e.detail as Prisma.InputJsonValue })),
         },
       },
       include: { exceptions: true },

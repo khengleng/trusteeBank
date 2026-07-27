@@ -34,6 +34,10 @@ export class TrusteeClient {
   bankReconcile(programId: string): Promise<HttpResult> {
     return call(this.bank, 'POST', `/api/v1/bank/reserves/${programId}/bank-reconcile`);
   }
+  /** Open reconciliation exceptions — an open one is what blocks further issuance. */
+  reconciliationExceptions(): Promise<HttpResult> {
+    return call(this.paychain, 'GET', '/api/v1/paychain/reconciliation-exceptions?resolved=false');
+  }
   trialBalance(programId: string): Promise<HttpResult> {
     return call(this.bank, 'GET', `/api/v1/admin/ledger/${programId}/trial-balance`);
   }

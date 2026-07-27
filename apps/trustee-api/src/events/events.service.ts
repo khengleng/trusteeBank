@@ -24,6 +24,7 @@ export const PlatformEvent = {
   REDEMPTION_PAYOUT_CONFIRMED: 'redemption.payout.confirmed',
   REDEMPTION_COMPLETED: 'redemption.completed',
   RECONCILIATION_EXCEPTION_CREATED: 'reconciliation.exception.created',
+  RECONCILIATION_EXCEPTION_RESOLVED: 'reconciliation.exception.resolved',
   COMPLIANCE_HOLD_CREATED: 'compliance.hold.created',
   PROGRAM_SUSPENDED: 'program.suspended',
   ASSET_SUSPENDED: 'asset.suspended',

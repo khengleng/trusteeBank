@@ -468,13 +468,13 @@ export class MintService {
     const proofOfReserveAgeSeconds = latestSnapshot
       ? this.clock.ageSeconds(latestSnapshot.createdAt)
       : null;
-    // 2. Unresolved reconciliation: the latest run raised exceptions.
-    const latestRecon = await this.prisma.reconciliationRun.findFirst({
-      where: { programId: auth.programId },
-      orderBy: { createdAt: 'desc' },
-      select: { status: true },
+    // 2. Unresolved reconciliation: ANY open exception on ANY run for this
+    //    program blocks (CO-10). Looking only at the latest run would let a
+    //    later clean run of a different scope mask an open drift exception.
+    const openExceptions = await this.prisma.reconciliationException.count({
+      where: { resolved: false, run: { programId: auth.programId } },
     });
-    const hasUnresolvedReconciliation = latestRecon?.status === 'EXCEPTIONS';
+    const hasUnresolvedReconciliation = openExceptions > 0;
     // 3. Any reserve account for this program is restricted / on hold.
     const restrictedAccount = await this.prisma.trusteeAccount.findFirst({
       where: { programId: auth.programId, status: { in: ['RESTRICTED', 'ON_HOLD'] } },

@@ -894,8 +894,10 @@ model PaykhLoyaltyLiability {
   outstandingMinor   BigInt @default(0)
   issuedTotalMinor   BigInt @default(0)
   redeemedTotalMinor BigInt @default(0)
-  onChainSupplyMinor BigInt @default(0)
-  reconciliationStatus String @default("PENDING") // OK | DRIFT | PENDING
+  // NULL until a figure has actually been read from the chain — never a copy of
+  // the ledger value, which would manufacture agreement (§24/§49).
+  onChainSupplyMinor BigInt?
+  reconciliationStatus String @default("PENDING") // OK | DRIFT | UNVERIFIED | PENDING
   lastReconciledAt DateTime?
   status           String   @default("ACTIVE")
   createdAt        DateTime @default(now())
